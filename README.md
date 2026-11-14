@@ -251,7 +251,3 @@ Para que la aplicación funcione con tu propia cuenta, necesitas configurar dos 
    ```
 
    Abre `http://127.0.0.1:8000` en tu navegador.
-
-
-
----
