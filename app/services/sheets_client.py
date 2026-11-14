@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import gspread
 from google.oauth2.service_account import Credentials
@@ -12,13 +13,22 @@ class SheetsClient:
         self.compromisos_sheet = None
 
     def connect(self):
-        if not os.path.exists(settings.google_credentials_path):
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_env:
+            credentials = Credentials.from_service_account_info(
+                json.loads(creds_env), scopes=scopes
+            )
+        elif os.path.exists(settings.google_credentials_path):
+            credentials = Credentials.from_service_account_file(
+                settings.google_credentials_path, scopes=scopes
+            )
+        else:
             raise FileNotFoundError(f"Falta el archivo: {settings.google_credentials_path}")
-        
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        credentials = Credentials.from_service_account_file(
-            settings.google_credentials_path, scopes=scopes
-        )
+
         self.client = gspread.authorize(credentials)
         self.spreadsheet = self.client.open_by_key(settings.sheet_id)
         self.sheet = self.spreadsheet.worksheet(settings.worksheet_name)
