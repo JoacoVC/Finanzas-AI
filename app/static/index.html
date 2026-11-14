@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finanzas AI — Panel Personal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans">
+
+  <!-- Barra superior -->
+  <header class="bg-slate-900 text-white shadow-md">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">💸</span>
+        <h1 class="text-xl font-bold tracking-tight">Finanzas AI</h1>
+      </div>
+      <button onclick="cargarDatos()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg transition">
+        ↻ Actualizar datos
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+    <!-- Tarjetas de Resumen (Ingresos, Egresos, Balance) -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <p class="text-sm font-medium text-slate-500">Total Ingresos</p>
+        <p id="card-ingresos" class="text-3xl font-bold text-emerald-600 mt-2">$0</p>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <p class="text-sm font-medium text-slate-500">Total Egresos</p>
+        <p id="card-egresos" class="text-3xl font-bold text-rose-600 mt-2">$0</p>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <p class="text-sm font-medium text-slate-500">Balance General</p>
+        <p id="card-balance" class="text-3xl font-bold text-slate-900 mt-2">$0</p>
+      </div>
+    </section>
+
+    <!-- Módulo de Registro (IA vs Manual) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <!-- Pestañas de selección -->
+      <div class="flex border-b border-slate-200 bg-slate-100/60">
+        <button id="tab-ia" onclick="cambiarModo('ia')" class="flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition">
+          ✨ Registro Rápido con IA
+        </button>
+        <button id="tab-manual" onclick="cambiarModo('manual')" class="flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition">
+          📝 Registro Manual
+        </button>
+      </div>
+
+      <div class="p-6">
+        <!-- Alerta de notificación -->
+        <div id="alerta" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium"></div>
+
+        <!-- Formulario 1: Lenguaje Natural con IA -->
+        <form id="form-ia" onsubmit="enviarIA(event)" class="space-y-4">
+          <div>
+            <label for="texto-ia" class="block text-sm font-medium text-slate-700 mb-1">
+              Describe tu movimiento como si hablaras con un amigo
+            </label>
+            <div class="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                id="texto-ia"
+                required
+                placeholder="Ej: Gasté 25000 en pasajes y comida / Me pagaron 500000 de trabajo"
+                class="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                type="submit"
+                id="btn-ia"
+                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-3 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
+              >
+                Registrar con IA
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Formulario 2: Registro Manual Campo por Campo -->
+        <form id="form-manual" onsubmit="enviarManual(event)" class="hidden space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Fecha</label>
+              <input type="date" id="man-fecha" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Tipo</label>
+              <select id="man-tipo" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="Egreso">Egreso</option>
+                <option value="Ingreso">Ingreso</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Categoría</label>
+              <select id="man-categoria" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="Gastos">Gastos</option>
+                <option value="Servicios">Servicios</option>
+                <option value="Trabajo">Trabajo</option>
+                <option value="Ahorro">Ahorro</option>
+                <option value="Préstamo">Préstamo</option>
+                <option value="Deudas">Deudas</option>
+                <option value="Otros">Otros</option>
+              </select>
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Concepto</label>
+              <input type="text" id="man-concepto" required placeholder="Ej: Mercado semanal" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Monto ($)</label>
+              <input type="number" id="man-monto" required min="1" placeholder="25000" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Presupuesto ($ - Opcional)</label>
+              <input type="number" id="man-presupuesto" value="0" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button
+              type="submit"
+              id="btn-manual"
+              class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
+            >
+              Guardar Movimiento Manual
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Tabla de Movimientos Recientes -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+        <h2 class="font-bold text-slate-800">Historial de Movimientos</h2>
+        <span id="contador-registros" class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">0 registros</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
+              <th class="py-3 px-4">Fecha</th>
+              <th class="py-3 px-4">Tipo</th>
+              <th class="py-3 px-4">Categoría</th>
+              <th class="py-3 px-4">Concepto</th>
+              <th class="py-3 px-4 text-right">Monto</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-movimientos" class="divide-y divide-slate-100 text-sm">
+            <tr>
+              <td colspan="5" class="py-8 text-center text-slate-400">Cargando movimientos desde Google Sheets...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    const formatoMoneda = new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      maximumFractionDigits: 0
+    });
+
+    // Inicializar fecha de hoy en el formulario manual
+    document.getElementById('man-fecha').valueAsDate = new Date();
+
+    function cambiarModo(modo) {
+      const formIA = document.getElementById('form-ia');
+      const formManual = document.getElementById('form-manual');
+      const tabIA = document.getElementById('tab-ia');
+      const tabManual = document.getElementById('tab-manual');
+
+      if (modo === 'ia') {
+        formIA.classList.remove('hidden');
+        formManual.classList.add('hidden');
+        tabIA.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
+        tabManual.className = "flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
+      } else {
+        formIA.classList.add('hidden');
+        formManual.classList.remove('hidden');
+        tabManual.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
+        tabIA.className = "flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
+      }
+    }
+
+    function mostrarAlerta(mensaje, esError = false) {
+      const alerta = document.getElementById('alerta');
+      alerta.textContent = mensaje;
+      alerta.className = `mb-4 p-3.5 rounded-xl text-sm font-medium ${
+        esError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+      }`;
+      alerta.classList.remove('hidden');
+      setTimeout(() => alerta.classList.add('hidden'), 5000);
+    }
+
+    async function cargarDatos() {
+      try {
+        const res = await fetch('/movimientos');
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.detail || 'Error al cargar datos');
+
+        // Actualizar tarjetas
+        document.getElementById('card-ingresos').textContent = formatoMoneda.format(data.resumen.ingresos);
+        document.getElementById('card-egresos').textContent = formatoMoneda.format(data.resumen.egresos);
+        
+        const elBalance = document.getElementById('card-balance');
+        elBalance.textContent = formatoMoneda.format(data.resumen.balance);
+        elBalance.className = `text-3xl font-bold mt-2 ${data.resumen.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`;
+
+        // Actualizar tabla
+        const tbody = document.getElementById('tabla-movimientos');
+        document.getElementById('contador-registros').textContent = `${data.movimientos.length} registros`;
+
+        if (data.movimientos.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">No hay movimientos registrados aún.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.movimientos.map(m => {
+          const esIngreso = m.tipo.toLowerCase() === 'ingreso';
+          const badgeColor = esIngreso ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700';
+          const montoColor = esIngreso ? 'text-emerald-600 font-semibold' : 'text-slate-800 font-semibold';
+          const signo = esIngreso ? '+' : '-';
+
+          return `
+            <tr class="hover:bg-slate-50/80 transition">
+              <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${m.fecha}</td>
+              <td class="py-3 px-4">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeColor}">${m.tipo}</span>
+              </td>
+              <td class="py-3 px-4 text-slate-700">${m.categoria}</td>
+              <td class="py-3 px-4 text-slate-800">${m.concepto}</td>
+              <td class="py-3 px-4 text-right whitespace-nowrap ${montoColor}">
+                ${signo}${formatoMoneda.format(m.monto)}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('No se pudieron cargar los datos de Google Sheets: ' + err.message, true);
+      }
+    }
+
+    async function enviarIA(e) {
+      e.preventDefault();
+      const input = document.getElementById('texto-ia');
+      const btn = document.getElementById('btn-ia');
+      const texto = input.value.trim();
+      if (!texto) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Analizando...';
+
+      try {
+        const res = await fetch('/registrar-transaccion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al registrar');
+
+        const fila = data.data.fila_insertada;
+        mostrarAlerta(`✅ Registrado: ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        input.value = '';
+        await cargarDatos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Registrar con IA';
+      }
+    }
+
+    async function enviarManual(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-manual');
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+
+      const payload = {
+        fecha: document.getElementById('man-fecha').value,
+        tipo: document.getElementById('man-tipo').value,
+        categoria: document.getElementById('man-categoria').value,
+        concepto: document.getElementById('man-concepto').value.trim(),
+        monto: parseInt(document.getElementById('man-monto').value, 10),
+        presupuesto: parseInt(document.getElementById('man-presupuesto').value || '0', 10)
+      };
+
+      try {
+        const res = await fetch('/registrar-manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al guardar');
+
+        mostrarAlerta(`✅ Movimiento guardado: ${payload.concepto} por ${formatoMoneda.format(payload.monto)}`);
+        document.getElementById('man-concepto').value = '';
+        document.getElementById('man-monto').value = '';
+        await cargarDatos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Guardar Movimiento Manual';
+      }
+    }
+
+    // Cargar datos al abrir la página
+    cargarDatos();
+  </script>
+</body>
+</html>
