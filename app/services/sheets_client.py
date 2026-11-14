@@ -39,6 +39,8 @@ class SheetsClient:
                 self.compromisos_sheet.append_row(encabezados, value_input_option="USER_ENTERED")
         return self.compromisos_sheet
 
+    # --- MÉTODOS DE TRANSACCIONES (HOJA PRINCIPAL) ---
+
     def append_record(self, record_data: list):
         if self.sheet is None:
             self.connect()
@@ -57,7 +59,7 @@ class SheetsClient:
             return []
 
         registros = []
-        for fila in filas[1:]:
+        for idx, fila in enumerate(filas[1:], start=2):
             if not fila or not fila[0].strip():
                 continue
             
@@ -68,7 +70,11 @@ class SheetsClient:
                 except ValueError:
                     return 0
 
+            # Si una fila antigua no tenía ID en columna I, le asignamos uno temporal basado en su fila
+            rec_id = fila[8].strip() if len(fila) > 8 and fila[8].strip() else f"row_{idx}"
+
             registros.append({
+                "row_index": idx,
                 "fecha": fila[0] if len(fila) > 0 else "",
                 "mes": fila[1] if len(fila) > 1 else "",
                 "anio": fila[2] if len(fila) > 2 else "",
@@ -77,10 +83,29 @@ class SheetsClient:
                 "concepto": fila[5] if len(fila) > 5 else "",
                 "presupuesto": limpiar_numero(fila[6]) if len(fila) > 6 else 0,
                 "monto": limpiar_numero(fila[7]) if len(fila) > 7 else 0,
-                "id": fila[8] if len(fila) > 8 else ""
+                "id": rec_id
             })
         
         return registros
+
+    def _buscar_fila_transaccion(self, record_id: str) -> dict:
+        registros = self.get_all_records()
+        objetivo = next((r for r in registros if r["id"] == record_id), None)
+        if not objetivo:
+            raise ValueError("Transacción no encontrada en Google Sheets.")
+        return objetivo
+
+    def update_record(self, record_id: str, updated_data: list):
+        objetivo = self._buscar_fila_transaccion(record_id)
+        row_idx = objetivo["row_index"]
+        # Conservamos el ID real (o generamos uno si era una fila antigua sin ID)
+        final_id = record_id if not record_id.startswith("row_") else str(uuid.uuid4())[:8]
+        fila_completa = updated_data + [final_id]
+        self.sheet.update(f"A{row_idx}:I{row_idx}", [fila_completa], value_input_option="USER_ENTERED")
+
+    def delete_record(self, record_id: str):
+        objetivo = self._buscar_fila_transaccion(record_id)
+        self.sheet.delete_rows(objetivo["row_index"])
 
     # --- MÉTODOS PARA COMPROMISOS Y DEUDAS RECURRENTES ---
 
@@ -95,7 +120,7 @@ class SheetsClient:
             monto_cuota,
             cuotas_totales,  # 0 si es recurrente indefinido
             0,               # CuotasPagadas inicia en 0
-            "",              # UltimoMesPagado (ej. "2026-11")
+            "",              # UltimoMesPagado
             "Activo"
         ]
         ws.append_row(fila, value_input_option="USER_ENTERED")
@@ -134,6 +159,25 @@ class SheetsClient:
             })
         return activos
 
+    def actualizar_compromiso(self, comp_id: str, nombre: str, modalidad: str, categoria: str, monto_cuota: int, cuotas_totales: int, cuotas_pagadas: int):
+        ws = self._get_compromisos_sheet()
+        activos = self.listar_compromisos_activos()
+        objetivo = next((c for c in activos if c["id"] == comp_id), None)
+        if not objetivo:
+            raise ValueError("Compromiso no encontrado.")
+
+        row_idx = objetivo["row_index"]
+        cuotas_tot = cuotas_totales if modalidad == "Cuotas" else 0
+        cuotas_pag = min(cuotas_pagadas, cuotas_tot) if modalidad == "Cuotas" else cuotas_pagadas
+        estado = "Finalizado" if (modalidad == "Cuotas" and cuotas_tot > 0 and cuotas_pag >= cuotas_tot) else "Activo"
+
+        # Actualiza columnas B(Nombre) hasta G(CuotasPagadas) e I(Estado)
+        ws.update(
+            f"B{row_idx}:I{row_idx}",
+            [[nombre, modalidad, categoria, monto_cuota, cuotas_tot, cuotas_pag, objetivo["ultimo_mes_pagado"], estado]],
+            value_input_option="USER_ENTERED"
+        )
+
     def registrar_pago_compromiso(self, comp_id: str, periodo_actual: str) -> dict:
         ws = self._get_compromisos_sheet()
         activos = self.listar_compromisos_activos()
@@ -151,7 +195,6 @@ class SheetsClient:
                 nuevo_estado = "Finalizado"
 
         row_idx = objetivo["row_index"]
-        # Actualizar columnas G (7: CuotasPagadas), H (8: UltimoMesPagado) e I (9: Estado)
         ws.update(f"G{row_idx}:I{row_idx}", [[nuevas_pagadas, periodo_actual, nuevo_estado]])
 
         objetivo["cuotas_pagadas"] = nuevas_pagadas
@@ -160,12 +203,33 @@ class SheetsClient:
         objetivo["finalizado"] = finalizado
         return objetivo
 
-    def cancelar_compromiso(self, comp_id: str):
+    def liquidar_compromiso(self, comp_id: str, periodo_actual: str) -> dict:
+        ws = self._get_compromisos_sheet()
+        activos = self.listar_compromisos_activos()
+        objetivo = next((c for c in activos if c["id"] == comp_id), None)
+        if not objetivo:
+            raise ValueError("Compromiso no encontrado o ya finalizado.")
+        if objetivo["modalidad"] != "Cuotas" or objetivo["cuotas_totales"] <= 0:
+            raise ValueError("Solo se pueden liquidar deudas que tienen un número de cuotas definido.")
+
+        cuotas_restantes = max(1, objetivo["cuotas_totales"] - objetivo["cuotas_pagadas"])
+        monto_liquidacion = cuotas_restantes * objetivo["monto_cuota"]
+
+        row_idx = objetivo["row_index"]
+        ws.update(f"G{row_idx}:I{row_idx}", [[objetivo["cuotas_totales"], periodo_actual, "Finalizado"]])
+
+        objetivo["cuotas_restantes"] = cuotas_restantes
+        objetivo["monto_liquidacion"] = monto_liquidacion
+        objetivo["cuotas_pagadas"] = objetivo["cuotas_totales"]
+        objetivo["estado"] = "Finalizado"
+        return objetivo
+
+    def eliminar_compromiso(self, comp_id: str):
         ws = self._get_compromisos_sheet()
         activos = self.listar_compromisos_activos()
         objetivo = next((c for c in activos if c["id"] == comp_id), None)
         if not objetivo:
             raise ValueError("Compromiso no encontrado.")
-        ws.update(f"I{objetivo['row_index']}", [["Cancelado"]])
+        ws.delete_rows(objetivo["row_index"])
 
 sheets_client = SheetsClient()

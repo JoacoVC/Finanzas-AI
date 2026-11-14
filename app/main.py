@@ -7,7 +7,7 @@ from datetime import datetime
 from app.services.sheets_client import sheets_client
 from app.services.llm_factory import llm_factory
 
-app = FastAPI(title="Finanzas AI Backend", version="1.2.0")
+app = FastAPI(title="Finanzas AI Backend", version="1.3.0")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -26,10 +26,11 @@ class TransaccionManualRequest(BaseModel):
 
 class CompromisoManualRequest(BaseModel):
     nombre: str
-    modalidad: str        # "Recurrente" o "Cuotas"
-    categoria: str        # "Deudas", "Servicios", "Suscripciones"
+    modalidad: str
+    categoria: str
     monto_cuota: int
     cuotas_totales: int = 0
+    cuotas_pagadas: int = 0
 
 def mes_espanol(mes_num: int) -> str:
     meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
@@ -42,6 +43,8 @@ def servir_frontend():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "ok", "message": "API funcionando."}
+
+# --- ENDPOINTS DE TRANSACCIONES ---
 
 @app.get("/movimientos", tags=["Transacciones"])
 def obtener_movimientos():
@@ -105,6 +108,27 @@ def registrar_manual(req: TransaccionManualRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/movimientos/{record_id}", tags=["Transacciones"])
+def actualizar_movimiento(record_id: str, req: TransaccionManualRequest):
+    try:
+        dt = datetime.strptime(req.fecha, "%Y-%m-%d")
+        fila = [
+            dt.strftime("%d/%m/%Y"), mes_espanol(dt.month), dt.year,
+            req.tipo, req.categoria, req.concepto, req.presupuesto, req.monto
+        ]
+        sheets_client.update_record(record_id, fila)
+        return {"status": "success", "message": "Movimiento actualizado correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/movimientos/{record_id}", tags=["Transacciones"])
+def eliminar_movimiento(record_id: str):
+    try:
+        sheets_client.delete_record(record_id)
+        return {"status": "success", "message": "Movimiento eliminado correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # --- ENDPOINTS DE COMPROMISOS Y DEUDAS RECURRENTES ---
 
 @app.get("/compromisos", tags=["Compromisos"])
@@ -151,6 +175,22 @@ def crear_compromiso_manual(req: CompromisoManualRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/compromisos/{comp_id}", tags=["Compromisos"])
+def editar_compromiso(comp_id: str, req: CompromisoManualRequest):
+    try:
+        sheets_client.actualizar_compromiso(
+            comp_id=comp_id,
+            nombre=req.nombre,
+            modalidad=req.modalidad,
+            categoria=req.categoria,
+            monto_cuota=req.monto_cuota,
+            cuotas_totales=req.cuotas_totales,
+            cuotas_pagadas=req.cuotas_pagadas
+        )
+        return {"status": "success", "message": "Compromiso actualizado correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/compromisos/{comp_id}/pagar", tags=["Compromisos"])
 def pagar_compromiso(comp_id: str):
     try:
@@ -158,13 +198,11 @@ def pagar_compromiso(comp_id: str):
         periodo_actual = ahora.strftime("%Y-%m")
         resultado = sheets_client.registrar_pago_compromiso(comp_id, periodo_actual)
 
-        # Armar concepto descriptivo para el historial de gastos
         if resultado["modalidad"] == "Cuotas":
             concepto = f"{resultado['nombre']} (Cuota {resultado['cuotas_pagadas']}/{resultado['cuotas_totales']})"
         else:
             concepto = f"{resultado['nombre']} ({mes_espanol(ahora.month)})"
 
-        # Registrar automáticamente el Egreso en la pestaña principal Registros
         fila = [
             ahora.strftime("%d/%m/%Y"),
             mes_espanol(ahora.month),
@@ -183,18 +221,41 @@ def pagar_compromiso(comp_id: str):
             else f"✅ Pago registrado: {concepto} por ${resultado['monto_cuota']:,}".replace(",", ".")
         )
 
-        return {
-            "status": "success",
-            "finalizado": resultado["finalizado"],
-            "message": mensaje
-        }
+        return {"status": "success", "finalizado": resultado["finalizado"], "message": mensaje}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/compromisos/{comp_id}/liquidar", tags=["Compromisos"])
+def liquidar_compromiso(comp_id: str):
+    try:
+        ahora = datetime.now()
+        periodo_actual = ahora.strftime("%Y-%m")
+        resultado = sheets_client.liquidar_compromiso(comp_id, periodo_actual)
+
+        monto_total = resultado["monto_liquidacion"]
+        concepto = f"{resultado['nombre']} (Liquidación total - {resultado['cuotas_restantes']} cuotas)"
+
+        fila = [
+            ahora.strftime("%d/%m/%Y"),
+            mes_espanol(ahora.month),
+            ahora.year,
+            "Egreso",
+            resultado["categoria"],
+            concepto,
+            monto_total,
+            monto_total
+        ]
+        sheets_client.append_record(fila)
+
+        mensaje = f"🎉 ¡Deuda liquidada! Se registró el pago final de '{resultado['nombre']}' por ${monto_total:,}".replace(",", ".")
+        return {"status": "success", "message": mensaje}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/compromisos/{comp_id}", tags=["Compromisos"])
 def eliminar_compromiso(comp_id: str):
     try:
-        sheets_client.cancelar_compromiso(comp_id)
-        return {"status": "success", "message": "Compromiso cancelado y eliminado de la lista activa."}
+        sheets_client.eliminar_compromiso(comp_id)
+        return {"status": "success", "message": "Compromiso eliminado correctamente."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
