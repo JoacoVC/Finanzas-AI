@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Finanzas AI — Dashboard Analítico</title>
+  <title>Finanzas AI — Dashboard Analítico v2.0</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -16,7 +16,7 @@
         <span class="text-2xl">💸</span>
         <div>
           <h1 class="text-xl font-bold tracking-tight leading-none">Finanzas AI</h1>
-          <p class="text-xs text-slate-400 mt-0.5">Panel Inteligente Multimodal & Control de Compromisos</p>
+          <p class="text-xs text-slate-400 mt-0.5">Control de Cuentas, Tarjetas, Compromisos e IA Multimodal</p>
         </div>
       </div>
 
@@ -70,11 +70,18 @@
             <input
               type="text"
               id="texto-ia"
-              placeholder="Escribe (ej: Gasté 25000 en almuerzo), dicta por voz o sube una factura..."
+              placeholder="Ej: Gasté 25000 en almuerzo con Rappicard / Recibí 500 mil en Bancolombia..."
               class="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
 
-            <!-- Input oculto para subir foto/comprobante -->
+            <select
+              id="ia-cuenta"
+              title="Cuenta o tarjeta (Auto detecta si lo mencionas)"
+              class="rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-medium bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Auto (Detectar IA)</option>
+            </select>
+
             <input
               type="file"
               id="input-foto-factura"
@@ -85,19 +92,17 @@
             />
 
             <div class="flex gap-2">
-              <!-- Botón Subir Factura / Comprobante -->
               <button
                 type="button"
                 id="btn-foto-ia"
                 onclick="document.getElementById('input-foto-factura').click()"
-                title="Subir foto de factura o comprobante de transferencia"
+                title="Subir foto de factura o comprobante"
                 class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap"
               >
                 <span>📷</span>
                 <span>Factura / Foto</span>
               </button>
 
-              <!-- Botón Dictar por Voz -->
               <button
                 type="button"
                 id="btn-voz-ia"
@@ -109,7 +114,6 @@
                 <span id="texto-btn-voz-ia">Dictar</span>
               </button>
 
-              <!-- Botón Enviar Texto -->
               <button
                 type="submit"
                 id="btn-ia"
@@ -120,7 +124,6 @@
             </div>
           </div>
 
-          <!-- Indicador de estado multimodal (grabando / procesando imagen) -->
           <div id="estado-media-ia" class="hidden text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-3.5 py-2 rounded-lg flex items-center gap-2">
             <span class="animate-pulse">●</span>
             <span id="mensaje-media-ia">Procesando...</span>
@@ -128,7 +131,7 @@
         </form>
 
         <form id="form-manual" onsubmit="enviarManual(event)" class="hidden space-y-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Fecha</label>
               <input type="date" id="man-fecha" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -144,17 +147,12 @@
 
             <div>
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Categoría</label>
-              <select id="man-categoria" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="Comida">Comida</option>
-                <option value="Transporte">Transporte</option>
-                <option value="Suscripciones">Suscripciones</option>
-                <option value="Compras">Compras</option>
-                <option value="Servicios">Servicios</option>
-                <option value="Ahorro">Ahorro</option>
-                <option value="Préstamo">Préstamo</option>
-                <option value="Deudas">Deudas</option>
-                <option value="Otros">Otros</option>
-              </select>
+              <select id="man-categoria" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Cuenta / Tarjeta</label>
+              <select id="man-cuenta" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
             </div>
 
             <div class="md:col-span-2">
@@ -185,97 +183,173 @@
       </div>
     </section>
 
-    <!-- Módulo 2: Deudas y Pagos Recurrentes -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+    <!-- Módulo 2: Billeteras, Cuentas y Tarjetas de Crédito (Cupos) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
-          <h2 class="text-lg font-bold text-slate-900">📅 Deudas y Pagos Recurrentes</h2>
-          <p class="text-xs text-slate-500">Paga la cuota del mes, liquida el saldo total de una vez, o edita/elimina compromisos</p>
+          <h2 class="text-lg font-bold text-slate-900">💳 Mis Cuentas, Efectivo y Tarjetas de Crédito</h2>
+          <p class="text-xs text-slate-500">Controla tu dinero disponible en efectivo/banco y el cupo libre de tus tarjetas</p>
         </div>
-        <button onclick="toggleFormCompromiso()" class="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl transition">
-          + Nuevo Compromiso / Deuda
+        <button onclick="toggleFormCuenta()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl transition">
+          + Agregar Cuenta / Tarjeta
         </button>
       </div>
 
-      <div id="panel-nuevo-compromiso" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
-        <div class="flex gap-2 border-b border-slate-200 pb-2">
-          <button type="button" id="subtab-comp-ia" onclick="cambiarModoCompromiso('ia')" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">
-            ✨ Crear con IA (Texto o Voz)
-          </button>
-          <button type="button" id="subtab-comp-man" onclick="cambiarModoCompromiso('manual')" class="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg">
-            📝 Crear Manualmente
+      <!-- Formulario Nueva Cuenta / Tarjeta -->
+      <form id="form-nueva-cuenta" onsubmit="crearCuenta(event)" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
+          <input type="text" id="cta-nombre" required placeholder="Ej: Rappicard, Nequi, Efectivo" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo</label>
+          <select id="cta-tipo" onchange="toggleCampoCupoCuenta()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+            <option value="Efectivo">Efectivo</option>
+            <option value="Banco">Cuenta Bancaria / Billetera</option>
+            <option value="Tarjeta">Tarjeta de Crédito</option>
+          </select>
+        </div>
+        <div>
+          <label id="lbl-cta-saldo" class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Saldo Actual ($)</label>
+          <input type="number" id="cta-saldo" required value="0" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+        </div>
+        <div id="grupo-cta-cupo" class="hidden">
+          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Cupo Total Tarjeta ($)</label>
+          <input type="number" id="cta-cupo" value="0" min="0" placeholder="2000000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" id="btn-guardar-cta" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition">
+            Guardar Cuenta
           </button>
         </div>
+      </form>
 
-        <form id="form-comp-ia" onsubmit="crearCompromisoIA(event)" class="space-y-2.5">
-          <div class="flex flex-col sm:flex-row gap-2.5">
-            <input
-              type="text"
-              id="texto-comp-ia"
-              placeholder="Ej: Plan de celular 50000 todos los meses / Debo 3 millones en 8 cuotas..."
-              class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <div class="flex gap-2">
-              <button
-                type="button"
-                id="btn-voz-comp"
-                onclick="toggleGrabacionAudio('compromiso')"
-                title="Dictar deuda o pago recurrente por voz"
-                class="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <span id="icono-voz-comp">🎤</span>
-                <span id="texto-btn-voz-comp">Dictar</span>
-              </button>
-              <button type="submit" id="btn-comp-ia" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs transition whitespace-nowrap">
-                Agregar con IA
-              </button>
+      <div id="lista-cuentas" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <p class="text-sm text-slate-400 col-span-full">Cargando cuentas...</p>
+      </div>
+    </section>
+
+    <!-- Módulo 3: Compromisos Recurrentes (Colapsable / Acordeón) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-bold text-slate-900">📅 Deudas, Pagos e Ingresos Recurrentes</h2>
+              <span id="badge-resumen-comp" class="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">0 activos</span>
             </div>
+            <p id="subtitulo-resumen-comp" class="text-xs text-slate-500 mt-0.5">Gestiona cuotas, suscripciones y salario mensual</p>
           </div>
+        </div>
 
-          <div id="estado-media-comp" class="hidden text-xs font-medium text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center gap-2">
-            <span class="animate-pulse">●</span>
-            <span id="mensaje-media-comp">Grabando audio...</span>
-          </div>
-        </form>
-
-        <form id="form-comp-manual" onsubmit="crearCompromisoManual(event)" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
-            <input type="text" id="comp-nombre" required placeholder="Ej: Plan Celular" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo de Pago</label>
-            <select id="comp-modalidad" onchange="toggleCampoCuotas()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
-              <option value="Recurrente">Mensual sin fin</option>
-              <option value="Cuotas">A cuotas (con fin)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Categoría</label>
-            <select id="comp-categoria" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
-              <option value="Servicios">Servicios</option>
-              <option value="Deudas">Deudas</option>
-              <option value="Suscripciones">Suscripciones</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Valor Mensual ($)</label>
-            <input type="number" id="comp-monto" required min="1" placeholder="50000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-          </div>
-          <div id="grupo-cuotas" class="hidden">
-            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Total Cuotas</label>
-            <input type="number" id="comp-cuotas" min="1" value="1" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-          </div>
-          <div class="sm:col-span-2 md:col-span-5 flex justify-end">
-            <button type="submit" id="btn-comp-man" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2 rounded-xl text-xs transition">
-              Guardar Compromiso
-            </button>
-          </div>
-        </form>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            onclick="toggleAcordeonCompromisos()"
+            id="btn-toggle-acordeon-comp"
+            class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
+          >
+            <span id="icono-acordeon-comp">▼</span>
+            <span id="texto-acordeon-comp">Ocultar lista</span>
+          </button>
+          <button onclick="abrirNuevoCompromiso()" class="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl transition">
+            + Nuevo Compromiso
+          </button>
+        </div>
       </div>
 
-      <div id="lista-compromisos" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <p class="text-sm text-slate-400 col-span-full">Cargando compromisos...</p>
+      <!-- Contenido desplegable de Compromisos -->
+      <div id="contenedor-acordeon-comp" class="space-y-5 pt-4 border-t border-slate-200">
+        <div id="panel-nuevo-compromiso" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+          <div class="flex gap-2 border-b border-slate-200 pb-2">
+            <button type="button" id="subtab-comp-ia" onclick="cambiarModoCompromiso('ia')" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">
+              ✨ Crear con IA (Texto o Voz)
+            </button>
+            <button type="button" id="subtab-comp-man" onclick="cambiarModoCompromiso('manual')" class="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg">
+              📝 Crear Manualmente
+            </button>
+          </div>
+
+          <form id="form-comp-ia" onsubmit="crearCompromisoIA(event)" class="space-y-2.5">
+            <div class="flex flex-col sm:flex-row gap-2.5">
+              <input
+                type="text"
+                id="texto-comp-ia"
+                placeholder="Ej: Mi salario es de 3 millones los días 30 / Plan de celular 50 mil los días 15..."
+                class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  id="btn-voz-comp"
+                  onclick="toggleGrabacionAudio('compromiso')"
+                  class="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <span id="icono-voz-comp">🎤</span>
+                  <span id="texto-btn-voz-comp">Dictar</span>
+                </button>
+                <button type="submit" id="btn-comp-ia" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs transition whitespace-nowrap">
+                  Agregar con IA
+                </button>
+              </div>
+            </div>
+
+            <div id="estado-media-comp" class="hidden text-xs font-medium text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center gap-2">
+              <span class="animate-pulse">●</span>
+              <span id="mensaje-media-comp">Grabando audio...</span>
+            </div>
+          </form>
+
+          <form id="form-comp-manual" onsubmit="crearCompromisoManual(event)" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-3 items-end">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Flujo</label>
+              <select id="comp-flujo" onchange="actualizarCategoriasCompManual()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                <option value="Egreso">Gasto / Deuda (-)</option>
+                <option value="Ingreso">Ingreso Fijo (+)</option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
+              <input type="text" id="comp-nombre" required placeholder="Ej: Plan Celular o Salario" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo</label>
+              <select id="comp-modalidad" onchange="toggleCampoCuotas()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                <option value="Recurrente">Mensual sin fin</option>
+                <option value="Cuotas">A cuotas</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Categoría</label>
+              <select id="comp-categoria" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                <option value="Servicios">Servicios</option>
+                <option value="Deudas">Deudas</option>
+                <option value="Suscripciones">Suscripciones</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Valor Mensual ($)</label>
+              <input type="number" id="comp-monto" required min="1" placeholder="50000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Día del Mes</label>
+              <input type="number" id="comp-dia" required min="1" max="31" value="1" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+            </div>
+            <div id="grupo-cuotas" class="hidden">
+              <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Total Cuotas</label>
+              <input type="number" id="comp-cuotas" min="1" value="1" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+            </div>
+            <div class="sm:col-span-2 md:col-span-7 flex justify-end">
+              <button type="submit" id="btn-comp-man" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2 rounded-xl text-xs transition">
+                Guardar Compromiso
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div id="lista-compromisos" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <p class="text-sm text-slate-400 col-span-full">Cargando compromisos...</p>
+        </div>
       </div>
     </section>
 
@@ -350,7 +424,7 @@
                 <th class="py-2.5 px-4">Categoría</th>
                 <th class="py-2.5 px-4 text-right">Ppto</th>
                 <th class="py-2.5 px-4 text-right">Real</th>
-                <th class="py-2.5 px-4 text-right">Dif</th>
+                <th id="th-col-dif" class="py-2.5 px-4 text-right">Dif / Balance</th>
               </tr>
             </thead>
             <tbody id="tabla-resumen-categorias" class="divide-y divide-slate-100"></tbody>
@@ -383,7 +457,7 @@
       </div>
     </section>
 
-    <!-- Tabla Unificada de Detalles / Historial Completo con Acciones -->
+    <!-- Tabla Unificada de Detalles / Historial Completo -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
         <div class="flex items-center gap-3">
@@ -401,6 +475,7 @@
             <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
               <th class="py-3 px-4">Fecha</th>
               <th class="py-3 px-4">Tipo</th>
+              <th class="py-3 px-4">Cuenta</th>
               <th class="py-3 px-4">Categoría</th>
               <th class="py-3 px-4">Concepto</th>
               <th class="py-3 px-4 text-right">Ppto</th>
@@ -441,16 +516,20 @@
             <select id="edit-mov-categoria" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"></select>
           </div>
           <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Cuenta / Tarjeta</label>
+            <select id="edit-mov-cuenta" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"></select>
+          </div>
+          <div>
             <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Monto Real ($)</label>
             <input type="number" id="edit-mov-monto" required min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          </div>
-          <div class="sm:col-span-2">
-            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Concepto</label>
-            <input type="text" id="edit-mov-concepto" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Presupuesto ($)</label>
             <input type="number" id="edit-mov-presupuesto" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Concepto</label>
+            <input type="text" id="edit-mov-concepto" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
           </div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
@@ -465,12 +544,23 @@
   <div id="modal-editar-comp" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
       <div class="flex justify-between items-center border-b border-slate-200 pb-3">
-        <h3 class="text-lg font-bold text-slate-900">✏️ Editar Compromiso / Deuda</h3>
+        <h3 class="text-lg font-bold text-slate-900">✏️ Editar Compromiso</h3>
         <button onclick="cerrarModalComp()" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
       </div>
       <form onsubmit="guardarEdicionComp(event)" class="space-y-4">
         <input type="hidden" id="edit-comp-id" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Flujo</label>
+            <select id="edit-comp-flujo" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+              <option value="Egreso">Gasto / Deuda (-)</option>
+              <option value="Ingreso">Ingreso Fijo (+)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Día de Pago / Cobro</label>
+            <input type="number" id="edit-comp-dia" required min="1" max="31" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          </div>
           <div class="sm:col-span-2">
             <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nombre</label>
             <input type="text" id="edit-comp-nombre" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
@@ -488,6 +578,8 @@
               <option value="Servicios">Servicios</option>
               <option value="Deudas">Deudas</option>
               <option value="Suscripciones">Suscripciones</option>
+              <option value="Trabajo">Trabajo</option>
+              <option value="Otros">Otros</option>
             </select>
           </div>
           <div>
@@ -511,18 +603,55 @@
     </div>
   </div>
 
+  <!-- MODAL 3: EDITAR CUENTA / TARJETA -->
+  <div id="modal-editar-cta" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+        <h3 class="text-lg font-bold text-slate-900">✏️ Editar Cuenta / Tarjeta</h3>
+        <button onclick="cerrarModalCta()" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+      </div>
+      <form onsubmit="guardarEdicionCta(event)" class="space-y-4">
+        <input type="hidden" id="edit-cta-id" />
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nombre</label>
+          <input type="text" id="edit-cta-nombre" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Tipo</label>
+          <select id="edit-cta-tipo" onchange="toggleEditCtaCupo()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+            <option value="Efectivo">Efectivo</option>
+            <option value="Banco">Cuenta Bancaria / Billetera</option>
+            <option value="Tarjeta">Tarjeta de Crédito</option>
+          </select>
+        </div>
+        <div>
+          <label id="lbl-edit-cta-saldo" class="block text-xs font-bold text-slate-600 uppercase mb-1">Saldo Actual ($)</label>
+          <input type="number" id="edit-cta-saldo" required min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div id="edit-grupo-cta-cupo" class="hidden">
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Cupo Total Tarjeta ($)</label>
+          <input type="number" id="edit-cta-cupo" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="cerrarModalCta()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button type="submit" id="btn-guardar-edit-cta" class="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     let todosLosMovimientos = [];
     let todosLosCompromisos = [];
+    let todasLasCuentas = [];
     let tipoAnalisisActual = 'Todos';
+    let acordeonCompAbierto = true;
     let chartDona = null;
     let chartPptoReal = null;
     let chartBalanceCat = null;
 
-    // Variables para grabación de audio
     let mediaRecorder = null;
     let audioChunks = [];
-    let grabandoContexto = null; // 'transaccion' o 'compromiso'
 
     const CATEGORIAS_EGRESO = ['Comida', 'Transporte', 'Suscripciones', 'Compras', 'Servicios', 'Ahorro', 'Préstamo', 'Deudas', 'Gastos', 'Otros'];
     const CATEGORIAS_INGRESO = ['Trabajo', 'Préstamo', 'Deudas', 'Otros'];
@@ -541,26 +670,208 @@
       document.getElementById('man-fecha').value = `${anio}-${mes}-${dia}`;
     }
     establecerFechaLocalHoy();
+    actualizarCategoriasManual();
 
-    // --- FUNCIONES MULTIMEDIA (VOZ E IMAGEN DE FACTURAS) ---
+    // --- FUNCIONES DE CUENTAS Y TARJETAS ---
+
+    function toggleFormCuenta() {
+      document.getElementById('form-nueva-cuenta').classList.toggle('hidden');
+    }
+
+    function toggleCampoCupoCuenta() {
+      const esTarjeta = document.getElementById('cta-tipo').value === 'Tarjeta';
+      document.getElementById('grupo-cta-cupo').classList.toggle('hidden', !esTarjeta);
+      document.getElementById('lbl-cta-saldo').textContent = esTarjeta ? 'Cupo Utilizado / Deuda ($)' : 'Saldo Actual ($)';
+    }
+
+    async function cargarCuentas() {
+      try {
+        const res = await fetch('/cuentas');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al cargar cuentas');
+
+        todasLasCuentas = data.cuentas || [];
+        renderizarCuentas();
+        actualizarSelectoresCuentas();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function actualizarSelectoresCuentas() {
+      const opciones = todasLasCuentas.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+      document.getElementById('ia-cuenta').innerHTML = '<option value="">Auto (Detectar IA)</option>' + opciones;
+      document.getElementById('man-cuenta').innerHTML = opciones || '<option value="Efectivo">Efectivo</option>';
+      document.getElementById('edit-mov-cuenta').innerHTML = opciones || '<option value="Efectivo">Efectivo</option>';
+    }
+
+    function renderizarCuentas() {
+      const contenedor = document.getElementById('lista-cuentas');
+      if (todasLasCuentas.length === 0) {
+        contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full">No hay cuentas registradas.</p>';
+        return;
+      }
+
+      contenedor.innerHTML = todasLasCuentas.map(c => {
+        const esTarjeta = c.tipo === 'Tarjeta';
+        const icono = esTarjeta ? '💳' : (c.tipo === 'Banco' ? '🏦' : '💵');
+        const badgeTipo = esTarjeta
+          ? '<span class="text-[10px] font-bold uppercase bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Crédito</span>'
+          : `<span class="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">${c.tipo}</span>`;
+
+        let detalleHTML = '';
+        if (esTarjeta) {
+          const pctUso = c.cupo_total > 0 ? Math.min(100, Math.round((c.saldo / c.cupo_total) * 100)) : 0;
+          detalleHTML = `
+            <p class="text-xs text-slate-500 mt-1">Cupo disponible:</p>
+            <p class="text-xl font-extrabold text-indigo-700">${formatoMoneda.format(c.cupo_disponible)}</p>
+            <div class="mt-2 space-y-1">
+              <div class="flex justify-between text-[11px] text-slate-500">
+                <span>Usado: ${formatoMoneda.format(c.saldo)}</span>
+                <span>Total: ${formatoMoneda.format(c.cupo_total)}</span>
+              </div>
+              <div class="w-full bg-slate-200 rounded-full h-1.5">
+                <div class="bg-purple-600 h-1.5 rounded-full" style="width: ${pctUso}%"></div>
+              </div>
+            </div>
+          `;
+        } else {
+          detalleHTML = `
+            <p class="text-xs text-slate-500 mt-1">Saldo disponible:</p>
+            <p class="text-xl font-extrabold ${c.saldo >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${formatoMoneda.format(c.saldo)}</p>
+          `;
+        }
+
+        return `
+          <div class="border border-slate-200 rounded-xl p-4 bg-slate-50/50 hover:bg-white transition flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center gap-2">
+                <span class="font-bold text-slate-900 text-sm flex items-center gap-1.5">${icono} ${c.nombre}</span>
+                ${badgeTipo}
+              </div>
+              ${detalleHTML}
+            </div>
+            <div class="mt-3 pt-2 border-t border-slate-200 flex justify-end gap-1.5">
+              <button onclick="abrirModalEditarCta('${c.id}')" title="Editar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600">✏️</button>
+              <button onclick="eliminarCuenta('${c.id}', '${c.nombre}')" title="Eliminar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function crearCuenta(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-guardar-cta');
+      btn.disabled = true;
+
+      const payload = {
+        nombre: document.getElementById('cta-nombre').value.trim(),
+        tipo: document.getElementById('cta-tipo').value,
+        saldo: parseInt(document.getElementById('cta-saldo').value || '0', 10),
+        cupo_total: parseInt(document.getElementById('cta-cupo').value || '0', 10)
+      };
+
+      try {
+        const res = await fetch('/cuentas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al crear cuenta');
+
+        mostrarAlerta(`✅ Cuenta "${payload.nombre}" agregada.`);
+        document.getElementById('cta-nombre').value = '';
+        document.getElementById('cta-saldo').value = '0';
+        document.getElementById('cta-cupo').value = '0';
+        document.getElementById('form-nueva-cuenta').classList.add('hidden');
+        await cargarCuentas();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function abrirModalEditarCta(id) {
+      const c = todasLasCuentas.find(item => item.id === id);
+      if (!c) return;
+      document.getElementById('edit-cta-id').value = c.id;
+      document.getElementById('edit-cta-nombre').value = c.nombre;
+      document.getElementById('edit-cta-tipo').value = c.tipo;
+      document.getElementById('edit-cta-saldo').value = c.saldo;
+      document.getElementById('edit-cta-cupo').value = c.cupo_total || 0;
+      toggleEditCtaCupo();
+      document.getElementById('modal-editar-cta').classList.remove('hidden');
+    }
+
+    function toggleEditCtaCupo() {
+      const esTarjeta = document.getElementById('edit-cta-tipo').value === 'Tarjeta';
+      document.getElementById('edit-grupo-cta-cupo').classList.toggle('hidden', !esTarjeta);
+      document.getElementById('lbl-edit-cta-saldo').textContent = esTarjeta ? 'Cupo Utilizado / Deuda ($)' : 'Saldo Actual ($)';
+    }
+
+    function cerrarModalCta() {
+      document.getElementById('modal-editar-cta').classList.add('hidden');
+    }
+
+    async function guardarEdicionCta(e) {
+      e.preventDefault();
+      const id = document.getElementById('edit-cta-id').value;
+      const payload = {
+        nombre: document.getElementById('edit-cta-nombre').value.trim(),
+        tipo: document.getElementById('edit-cta-tipo').value,
+        saldo: parseInt(document.getElementById('edit-cta-saldo').value || '0', 10),
+        cupo_total: parseInt(document.getElementById('edit-cta-cupo').value || '0', 10)
+      };
+
+      try {
+        const res = await fetch(`/cuentas/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al actualizar cuenta');
+
+        cerrarModalCta();
+        mostrarAlerta('✅ ' + data.message);
+        await cargarCuentas();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      }
+    }
+
+    async function eliminarCuenta(id, nombre) {
+      if (!confirm(`¿Seguro que deseas eliminar la cuenta "${nombre}"?`)) return;
+      try {
+        const res = await fetch(`/cuentas/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al eliminar cuenta');
+        mostrarAlerta('🗑️ ' + data.message);
+        await cargarCuentas();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      }
+    }
+
+    // --- FUNCIONES MULTIMEDIA (VOZ E IMAGEN) ---
 
     async function toggleGrabacionAudio(contexto) {
-      // Si ya estamos grabando, detener y enviar
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         return;
       }
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        mostrarAlerta('❌ Tu navegador no soporta grabación de audio o requiere conexión segura (localhost/HTTPS).', true);
+        mostrarAlerta('❌ Tu navegador no soporta grabación de audio o requiere conexión segura (HTTPS).', true);
         return;
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioChunks = [];
-        grabandoContexto = contexto;
-
         const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
         mediaRecorder = new MediaRecorder(stream, { mimeType });
 
@@ -573,10 +884,15 @@
           actualizarUIGrabacion(contexto, false);
 
           const blobAudio = new Blob(audioChunks, { type: mimeType });
+          if (blobAudio.size < 1000) {
+            mostrarAlerta('⚠️ Audio demasiado corto o vacío. No se registró nada.', true);
+            return;
+          }
+
           if (contexto === 'transaccion') {
-            await enviarAudioTransaccion(blobAudio, mimeType);
+            await enviarAudioTransaccion(blobAudio);
           } else {
-            await enviarAudioCompromiso(blobAudio, mimeType);
+            await enviarAudioCompromiso(blobAudio);
           }
         };
 
@@ -613,7 +929,7 @@
           btn.className = "bg-rose-600 hover:bg-rose-700 text-white border border-rose-600 font-semibold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap animate-pulse";
           txt.textContent = "Detener";
           banner.classList.remove('hidden');
-          msg.textContent = "Grabando compromiso... Ej: 'Debo 2 millones a 4 cuotas de 500 mil'.";
+          msg.textContent = "Grabando compromiso... Ej: 'Salario 3 millones los 30' o 'Debo 2 millones en 4 cuotas'.";
         } else {
           btn.className = "bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap";
           txt.textContent = "Dictar";
@@ -621,7 +937,7 @@
       }
     }
 
-    async function enviarAudioTransaccion(blobAudio, mimeType) {
+    async function enviarAudioTransaccion(blobAudio) {
       const banner = document.getElementById('estado-media-ia');
       const msg = document.getElementById('mensaje-media-ia');
       banner.classList.remove('hidden');
@@ -630,6 +946,7 @@
       const formData = new FormData();
       formData.append('archivo', blobAudio, 'nota_voz.webm');
       formData.append('nota', document.getElementById('texto-ia').value.trim());
+      formData.append('cuenta', document.getElementById('ia-cuenta').value);
 
       try {
         const res = await fetch('/registrar-transaccion-media', { method: 'POST', body: formData });
@@ -637,17 +954,17 @@
         if (!res.ok) throw new Error(data.detail || 'Error procesando audio');
 
         const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Audio registrado: ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(`✅ Audio registrado (${data.data.cuenta}): ${fila[3]} — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
         document.getElementById('texto-ia').value = '';
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
-        mostrarAlerta('❌ ' + err.message, true);
+        mostrarAlerta('⚠️ ' + err.message, true);
       } finally {
         banner.classList.add('hidden');
       }
     }
 
-    async function enviarAudioCompromiso(blobAudio, mimeType) {
+    async function enviarAudioCompromiso(blobAudio) {
       const banner = document.getElementById('estado-media-comp');
       const msg = document.getElementById('mensaje-media-comp');
       banner.classList.remove('hidden');
@@ -665,13 +982,12 @@
         document.getElementById('panel-nuevo-compromiso').classList.add('hidden');
         await cargarCompromisos();
       } catch (err) {
-        mostrarAlerta('❌ ' + err.message, true);
+        mostrarAlerta('⚠️ ' + err.message, true);
       } finally {
         banner.classList.add('hidden');
       }
     }
 
-    // Comprime imágenes pesadas de celular antes de enviarlas a FastAPI
     function comprimirImagen(archivo, maxAncho = 1280, calidad = 0.82) {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -681,17 +997,14 @@
             const canvas = document.createElement('canvas');
             let width = img.width;
             let height = img.height;
-
             if (width > maxAncho) {
               height = Math.round((height * maxAncho) / width);
               width = maxAncho;
             }
-
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
-
             canvas.toBlob((blob) => resolve(blob || archivo), 'image/jpeg', calidad);
           };
           img.src = e.target.result;
@@ -717,21 +1030,22 @@
         const formData = new FormData();
         formData.append('archivo', imagenOptimizada, 'comprobante.jpg');
         formData.append('nota', document.getElementById('texto-ia').value.trim());
+        formData.append('cuenta', document.getElementById('ia-cuenta').value);
 
         const res = await fetch('/registrar-transaccion-media', { method: 'POST', body: formData });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error leyendo la imagen');
 
         const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Comprobante registrado: ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(`✅ Comprobante registrado (${data.data.cuenta}): "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
         document.getElementById('texto-ia').value = '';
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       } finally {
         banner.classList.add('hidden');
         btnFoto.disabled = false;
-        event.target.value = ''; // Permite volver a subir otra foto
+        event.target.value = '';
       }
     }
 
@@ -766,9 +1080,21 @@
       }
     }
 
-    // --- FUNCIONES DE DEUDAS Y COMPROMISOS ---
+    // --- FUNCIONES DE COMPROMISOS (ACORDEÓN, INGRESOS RECURRENTES, DÍA DE PAGO) ---
 
-    function toggleFormCompromiso() {
+    function toggleAcordeonCompromisos() {
+      acordeonCompAbierto = !acordeonCompAbierto;
+      const cont = document.getElementById('contenedor-acordeon-comp');
+      const icono = document.getElementById('icono-acordeon-comp');
+      const texto = document.getElementById('texto-acordeon-comp');
+
+      cont.classList.toggle('hidden', !acordeonCompAbierto);
+      icono.textContent = acordeonCompAbierto ? '▼' : '▶';
+      texto.textContent = acordeonCompAbierto ? 'Ocultar lista' : 'Mostrar lista';
+    }
+
+    function abrirNuevoCompromiso() {
+      if (!acordeonCompAbierto) toggleAcordeonCompromisos();
       document.getElementById('panel-nuevo-compromiso').classList.toggle('hidden');
     }
 
@@ -791,10 +1117,16 @@
       }
     }
 
+    function actualizarCategoriasCompManual() {
+      const flujo = document.getElementById('comp-flujo').value;
+      const sel = document.getElementById('comp-categoria');
+      const opts = flujo === 'Ingreso' ? ['Trabajo', 'Préstamo', 'Otros'] : ['Servicios', 'Deudas', 'Suscripciones'];
+      sel.innerHTML = opts.map(o => `<option value="${o}">${o}</option>`).join('');
+    }
+
     function toggleCampoCuotas() {
       const mod = document.getElementById('comp-modalidad').value;
-      const grupo = document.getElementById('grupo-cuotas');
-      grupo.classList.toggle('hidden', mod !== 'Cuotas');
+      document.getElementById('grupo-cuotas').classList.toggle('hidden', mod !== 'Cuotas');
     }
 
     async function cargarCompromisos() {
@@ -806,12 +1138,26 @@
         todosLosCompromisos = data.compromisos || [];
         const contenedor = document.getElementById('lista-compromisos');
 
+        const totalEgresosMes = todosLosCompromisos
+          .filter(c => (c.flujo || 'Egreso') === 'Egreso' && !c.pagado_este_mes)
+          .reduce((s, c) => s + c.monto_cuota, 0);
+        const totalIngresosMes = todosLosCompromisos
+          .filter(c => c.flujo === 'Ingreso' && !c.pagado_este_mes)
+          .reduce((s, c) => s + c.monto_cuota, 0);
+
+        document.getElementById('badge-resumen-comp').textContent = `${todosLosCompromisos.length} activos`;
+        document.getElementById('subtitulo-resumen-comp').textContent =
+          `Pendiente este mes → Pagos: ${formatoMoneda.format(totalEgresosMes)} · Ingresos fijos: ${formatoMoneda.format(totalIngresosMes)}`;
+
         if (todosLosCompromisos.length === 0) {
-          contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full py-2">No tienes deudas ni pagos recurrentes activos. Agrega uno arriba.</p>';
+          contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full py-2">No tienes compromisos activos. Agrega uno arriba.</p>';
           return;
         }
 
+        const opcionesCuentasHTML = todasLasCuentas.map(cta => `<option value="${cta.nombre}">${cta.nombre}</option>`).join('') || '<option value="Efectivo">Efectivo</option>';
+
         contenedor.innerHTML = todosLosCompromisos.map(c => {
+          const esIngreso = (c.flujo || 'Egreso') === 'Ingreso';
           const esCuotas = c.modalidad === 'Cuotas';
           const progresoPct = esCuotas && c.cuotas_totales > 0
             ? Math.min(100, Math.round((c.cuotas_pagadas / c.cuotas_totales) * 100))
@@ -821,8 +1167,12 @@
             : 0;
 
           const estadoMesBadge = c.pagado_este_mes
-            ? `<span class="text-[11px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">✓ Pagado este mes</span>`
-            : `<span class="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Pendiente este mes</span>`;
+            ? `<span class="text-[11px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">✓ ${esIngreso ? 'Recibido' : 'Pagado'} este mes</span>`
+            : `<span class="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Pendiente · Día ${c.dia_pago || 1}</span>`;
+
+          const etiquetaFlujo = esIngreso
+            ? `<span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600">+ INGRESO FIJO · ${c.categoria}</span>`
+            : `<span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">${c.categoria} · Día ${c.dia_pago || 1}</span>`;
 
           const detalleCuotasHTML = esCuotas
             ? `
@@ -836,13 +1186,12 @@
                 </div>
               </div>
             `
-            : `<p class="mt-3 text-xs text-slate-500">Pago fijo mensual (sin fecha de fin)</p>`;
+            : `<p class="mt-2 text-xs text-slate-500">${esIngreso ? 'Ingreso fijo mensual' : 'Pago fijo mensual'} (día ${c.dia_pago || 1} de cada mes)</p>`;
 
-          const btnLiquidarHTML = esCuotas
+          const btnLiquidarHTML = (!esIngreso && esCuotas)
             ? `
               <button
                 onclick="liquidarCompromiso('${c.id}', '${c.nombre}', ${saldoRestante}, this)"
-                title="Pagar todo el saldo restante (${formatoMoneda.format(saldoRestante)}) y finalizar la deuda"
                 class="w-full mt-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1"
               >
                 ⚡ Liquidar saldo (${formatoMoneda.format(saldoRestante)})
@@ -850,43 +1199,61 @@
             `
             : '';
 
+          const btnMarcarSinSaldoHTML = !c.pagado_este_mes
+            ? `
+              <button
+                onclick="marcarCompromisoSinSaldo('${c.id}', '${c.nombre}', this)"
+                title="Marcar como ya pagado/recibido este mes sin alterar tu saldo actual"
+                class="w-full mt-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-medium py-1.5 px-3 rounded-lg text-[11px] transition"
+              >
+                ✓ Ya ${esIngreso ? 'recibido' : 'pagado'} este mes (sin tocar saldo)
+              </button>
+            `
+            : '';
+
           return `
-            <div class="border border-slate-200 rounded-xl p-4 flex flex-col justify-between bg-slate-50/50 hover:bg-white transition">
+            <div class="border ${esIngreso ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200 bg-slate-50/50'} rounded-xl p-4 flex flex-col justify-between hover:bg-white transition">
               <div>
                 <div class="flex justify-between items-start gap-2">
                   <div>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">${c.categoria}</span>
+                    ${etiquetaFlujo}
                     <h3 class="font-bold text-slate-900 text-base">${c.nombre}</h3>
                   </div>
                   ${estadoMesBadge}
                 </div>
-                <p class="text-xl font-extrabold text-slate-800 mt-1">${formatoMoneda.format(c.monto_cuota)} <span class="text-xs font-normal text-slate-500">/ mes</span></p>
+                <p class="text-xl font-extrabold ${esIngreso ? 'text-emerald-700' : 'text-slate-800'} mt-1">
+                  ${esIngreso ? '+' : ''}${formatoMoneda.format(c.monto_cuota)} <span class="text-xs font-normal text-slate-500">/ mes</span>
+                </p>
                 ${detalleCuotasHTML}
               </div>
 
-              <div class="mt-4 pt-3 border-t border-slate-200">
-                <div class="flex items-center justify-between gap-1.5">
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2">
+                <div class="flex items-center gap-1.5">
+                  <select id="cta-comp-${c.id}" class="text-xs border border-slate-300 rounded-lg px-2 py-2 bg-white text-slate-700 max-w-[115px]">
+                    ${opcionesCuentasHTML}
+                  </select>
                   <button
                     onclick="pagarCompromiso('${c.id}', this)"
-                    class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
+                    class="flex-1 ${esIngreso ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-900 hover:bg-slate-800'} text-white font-semibold py-2 px-2.5 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
                   >
-                    ✓ Pagar cuota
+                    ${esIngreso ? '✓ Registrar ingreso' : '✓ Pagar cuota'}
                   </button>
                   <button
                     onclick="abrirModalEditarComp('${c.id}')"
                     title="Editar compromiso"
-                    class="text-xs text-slate-500 hover:text-indigo-600 px-2.5 py-2 rounded-lg border border-slate-200 bg-white hover:border-indigo-300 transition"
+                    class="text-xs text-slate-500 hover:text-indigo-600 px-2 py-2 rounded-lg border border-slate-200 bg-white"
                   >
                     ✏️
                   </button>
                   <button
                     onclick="eliminarCompromiso('${c.id}', '${c.nombre}')"
-                    title="Eliminar compromiso por error"
-                    class="text-xs text-slate-500 hover:text-rose-600 px-2.5 py-2 rounded-lg border border-slate-200 bg-white hover:border-rose-300 transition"
+                    title="Eliminar compromiso"
+                    class="text-xs text-slate-500 hover:text-rose-600 px-2 py-2 rounded-lg border border-slate-200 bg-white"
                   >
                     🗑️
                   </button>
                 </div>
+                ${btnMarcarSinSaldoHTML}
                 ${btnLiquidarHTML}
               </div>
             </div>
@@ -897,11 +1264,27 @@
       }
     }
 
+    async function marcarCompromisoSinSaldo(id, nombre, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/compromisos/${id}/marcar-pagado`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al marcar compromiso');
+        mostrarAlerta(data.message);
+        await cargarCompromisos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+        btn.disabled = false;
+      }
+    }
+
     function abrirModalEditarComp(id) {
       const c = todosLosCompromisos.find(item => item.id === id);
       if (!c) return;
 
       document.getElementById('edit-comp-id').value = c.id;
+      document.getElementById('edit-comp-flujo').value = c.flujo || 'Egreso';
+      document.getElementById('edit-comp-dia').value = c.dia_pago || 1;
       document.getElementById('edit-comp-nombre').value = c.nombre;
       document.getElementById('edit-comp-modalidad').value = c.modalidad;
       document.getElementById('edit-comp-categoria').value = c.categoria;
@@ -930,6 +1313,8 @@
       btn.disabled = true;
 
       const payload = {
+        flujo: document.getElementById('edit-comp-flujo').value,
+        dia_pago: parseInt(document.getElementById('edit-comp-dia').value || '1', 10),
         nombre: document.getElementById('edit-comp-nombre').value.trim(),
         modalidad: document.getElementById('edit-comp-modalidad').value,
         categoria: document.getElementById('edit-comp-categoria').value,
@@ -958,13 +1343,18 @@
     }
 
     async function liquidarCompromiso(id, nombre, saldoRestante, btn) {
-      if (!confirm(`¿Confirmas liquidar la totalidad de "${nombre}" por ${formatoMoneda.format(saldoRestante)}? Se registrará este gasto hoy y la deuda quedará finalizada.`)) return;
+      const cuenta = document.getElementById(`cta-comp-${id}`)?.value || 'Efectivo';
+      if (!confirm(`¿Confirmas liquidar la totalidad de "${nombre}" por ${formatoMoneda.format(saldoRestante)} desde ${cuenta}?`)) return;
 
       btn.disabled = true;
       btn.textContent = 'Liquidando...';
 
       try {
-        const res = await fetch(`/compromisos/${id}/liquidar`, { method: 'POST' });
+        const res = await fetch(`/compromisos/${id}/liquidar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuenta })
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al liquidar deuda');
 
@@ -1012,10 +1402,12 @@
       btn.disabled = true;
 
       const payload = {
+        flujo: document.getElementById('comp-flujo').value,
         nombre: document.getElementById('comp-nombre').value.trim(),
         modalidad: document.getElementById('comp-modalidad').value,
         categoria: document.getElementById('comp-categoria').value,
         monto_cuota: parseInt(document.getElementById('comp-monto').value || '0', 10),
+        dia_pago: parseInt(document.getElementById('comp-dia').value || '1', 10),
         cuotas_totales: parseInt(document.getElementById('comp-cuotas').value || '0', 10)
       };
 
@@ -1041,25 +1433,29 @@
     }
 
     async function pagarCompromiso(id, btn) {
+      const cuenta = document.getElementById(`cta-comp-${id}`)?.value || 'Efectivo';
       btn.disabled = true;
-      btn.textContent = 'Registrando...';
+      btn.textContent = 'Procesando...';
 
       try {
-        const res = await fetch(`/compromisos/${id}/pagar`, { method: 'POST' });
+        const res = await fetch(`/compromisos/${id}/pagar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuenta })
+        });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Error al registrar pago');
+        if (!res.ok) throw new Error(data.detail || 'Error al registrar movimiento');
 
         mostrarAlerta(data.message);
         await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
         btn.disabled = false;
-        btn.textContent = '✓ Pagar cuota';
       }
     }
 
     async function eliminarCompromiso(id, nombre) {
-      if (!confirm(`¿Seguro que deseas eliminar "${nombre}"? Esta acción borrará el compromiso sin registrar ningún gasto.`)) return;
+      if (!confirm(`¿Seguro que deseas eliminar "${nombre}"?`)) return;
       try {
         const res = await fetch(`/compromisos/${id}`, { method: 'DELETE' });
         const data = await res.json();
@@ -1071,7 +1467,7 @@
       }
     }
 
-    // --- FUNCIONES DE EDICIÓN Y ELIMINACIÓN DE MOVIMIENTOS ---
+    // --- EDICIÓN Y ELIMINACIÓN DE MOVIMIENTOS ---
 
     function convertirFechaDDMMYYYYaISO(fechaStr) {
       const partes = fechaStr.split('/');
@@ -1097,6 +1493,7 @@
       document.getElementById('edit-mov-fecha').value = convertirFechaDDMMYYYYaISO(mov.fecha);
       document.getElementById('edit-mov-tipo').value = mov.tipo;
       actualizarCategoriasEdicionMov(mov.categoria);
+      document.getElementById('edit-mov-cuenta').value = mov.cuenta || 'Efectivo';
       document.getElementById('edit-mov-concepto').value = mov.concepto;
       document.getElementById('edit-mov-monto').value = mov.monto;
       document.getElementById('edit-mov-presupuesto').value = mov.presupuesto;
@@ -1118,6 +1515,7 @@
         fecha: document.getElementById('edit-mov-fecha').value,
         tipo: document.getElementById('edit-mov-tipo').value,
         categoria: document.getElementById('edit-mov-categoria').value,
+        cuenta: document.getElementById('edit-mov-cuenta').value,
         concepto: document.getElementById('edit-mov-concepto').value.trim(),
         monto: parseInt(document.getElementById('edit-mov-monto').value || '0', 10),
         presupuesto: parseInt(document.getElementById('edit-mov-presupuesto').value || '0', 10)
@@ -1134,7 +1532,7 @@
 
         cerrarModalMov();
         mostrarAlerta('✅ ' + data.message);
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       } finally {
@@ -1143,7 +1541,7 @@
     }
 
     async function eliminarMovimiento(id, concepto) {
-      if (!confirm(`¿Seguro que deseas eliminar el movimiento "${concepto}"? Se borrará permanentemente de Google Sheets.`)) return;
+      if (!confirm(`¿Seguro que deseas eliminar el movimiento "${concepto}"?`)) return;
 
       try {
         const res = await fetch(`/movimientos/${id}`, { method: 'DELETE' });
@@ -1151,13 +1549,13 @@
         if (!res.ok) throw new Error(data.detail || 'Error al eliminar');
 
         mostrarAlerta('🗑️ ' + data.message);
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       }
     }
 
-    // --- FUNCIONES DEL DASHBOARD ---
+    // --- FUNCIONES DEL DASHBOARD Y ANÁLISIS UNIFICADO CORREGIDO ---
 
     function cambiarTipoAnalisis(tipo) {
       tipoAnalisisActual = tipo;
@@ -1209,6 +1607,7 @@
     }
 
     async function sincronizarTodo() {
+      await cargarCuentas();
       await Promise.all([cargarDatos(), cargarCompromisos()]);
     }
 
@@ -1267,14 +1666,24 @@
         ? filtrados
         : filtrados.filter(m => m.tipo.toLowerCase() === tipoAnalisisActual.toLowerCase());
 
+      // Agrupamos por (Categoría + Tipo en vista Todos) para no mezclar ingresos con egresos
       const mapaCategorias = {};
       movsTipo.forEach(m => {
-        const cat = m.categoria || 'Otros';
-        if (!mapaCategorias[cat]) {
-          mapaCategorias[cat] = { ppto: 0, real: 0 };
+        const esIng = m.tipo.toLowerCase() === 'ingreso';
+        const clave = tipoAnalisisActual === 'Todos'
+          ? `${m.categoria || 'Otros'} (${esIng ? 'Ingreso' : 'Egreso'})`
+          : (m.categoria || 'Otros');
+
+        if (!mapaCategorias[clave]) {
+          mapaCategorias[clave] = {
+            categoriaRaw: m.categoria || 'Otros',
+            esIngreso: esIng,
+            ppto: 0,
+            real: 0
+          };
         }
-        mapaCategorias[cat].ppto += m.presupuesto;
-        mapaCategorias[cat].real += m.monto;
+        mapaCategorias[clave].ppto += m.presupuesto;
+        mapaCategorias[clave].real += m.monto;
       });
 
       const categoriasOrdenadas = Object.keys(mapaCategorias).sort((a, b) => mapaCategorias[b].real - mapaCategorias[a].real);
@@ -1283,6 +1692,7 @@
       document.getElementById('titulo-tabla-resumen').textContent = `Resumen de ${etiquetaVista} por Categoría`;
       document.getElementById('titulo-dona').textContent = `Distribución de ${etiquetaVista} (%)`;
       document.getElementById('titulo-barras-ppto').textContent = `Presupuesto vs Real (${etiquetaVista})`;
+      document.getElementById('th-col-dif').textContent = tipoAnalisisActual === 'Todos' ? 'Flujo / Dif' : 'Dif';
       document.getElementById('titulo-detalle').textContent = tipoAnalisisActual === 'Todos'
         ? 'Historial Completo de Movimientos'
         : `Detalle de ${etiquetaVista}`;
@@ -1296,41 +1706,59 @@
       } else {
         let totalPpto = 0;
         let totalReal = 0;
+        let totalNetoTodos = 0;
 
-        tbodyResumen.innerHTML = categoriasOrdenadas.map(cat => {
-          const { ppto, real } = mapaCategorias[cat];
-          totalPpto += ppto;
-          totalReal += real;
-          const dif = tipoAnalisisActual === 'Ingreso' ? (real - ppto) : (ppto - real);
+        tbodyResumen.innerHTML = categoriasOrdenadas.map(clave => {
+          const item = mapaCategorias[clave];
+          totalPpto += item.ppto;
+          totalReal += item.real;
+          totalNetoTodos += item.esIngreso ? item.real : -item.real;
+
+          // Para ingresos: Real - Ppto (más ingreso = positivo/verde)
+          // Para egresos: Ppto - Real (gastar menos del ppto = positivo/verde)
+          const dif = item.esIngreso ? (item.real - item.ppto) : (item.ppto - item.real);
+          const signoReal = tipoAnalisisActual === 'Todos' ? (item.esIngreso ? '+' : '-') : '';
 
           return `
-            <tr onclick="filtrarPorCategoria('${cat}')" class="hover:bg-indigo-50/60 cursor-pointer transition">
-              <td class="py-2.5 px-4 font-medium text-slate-800">${cat}</td>
-              <td class="py-2.5 px-4 text-right text-slate-500">${formatoMoneda.format(ppto)}</td>
-              <td class="py-2.5 px-4 text-right font-semibold text-slate-900">${formatoMoneda.format(real)}</td>
+            <tr onclick="filtrarPorCategoria('${item.categoriaRaw}')" class="hover:bg-indigo-50/60 cursor-pointer transition">
+              <td class="py-2.5 px-4 font-medium text-slate-800">${clave}</td>
+              <td class="py-2.5 px-4 text-right text-slate-500">${formatoMoneda.format(item.ppto)}</td>
+              <td class="py-2.5 px-4 text-right font-semibold ${item.esIngreso ? 'text-emerald-700' : 'text-slate-900'}">${signoReal}${formatoMoneda.format(item.real)}</td>
               <td class="py-2.5 px-4 text-right text-xs font-medium ${dif >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
-                ${formatoMoneda.format(dif)}
+                ${dif >= 0 ? '+' : ''}${formatoMoneda.format(dif)}
               </td>
             </tr>
           `;
         }).join('');
 
-        const totalDif = tipoAnalisisActual === 'Ingreso' ? (totalReal - totalPpto) : (totalPpto - totalReal);
-        tfootResumen.innerHTML = `
-          <tr>
-            <td class="py-2.5 px-4">Total ${etiquetaVista}</td>
-            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalPpto)}</td>
-            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalReal)}</td>
-            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalDif)}</td>
-          </tr>
-        `;
+        if (tipoAnalisisActual === 'Todos') {
+          tfootResumen.innerHTML = `
+            <tr>
+              <td class="py-2.5 px-4">Balance Neto (Ingresos - Egresos)</td>
+              <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalPpto)}</td>
+              <td class="py-2.5 px-4 text-right ${totalNetoTodos >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${formatoMoneda.format(totalNetoTodos)}</td>
+              <td class="py-2.5 px-4 text-right text-xs text-slate-500">Neto</td>
+            </tr>
+          `;
+        } else {
+          const totalDif = tipoAnalisisActual === 'Ingreso' ? (totalReal - totalPpto) : (totalPpto - totalReal);
+          tfootResumen.innerHTML = `
+            <tr>
+              <td class="py-2.5 px-4">Total ${etiquetaVista}</td>
+              <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalPpto)}</td>
+              <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalReal)}</td>
+              <td class="py-2.5 px-4 text-right ${totalDif >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${formatoMoneda.format(totalDif)}</td>
+            </tr>
+          `;
+        }
       }
 
+      const catsUnicas = [...new Set(movsTipo.map(m => m.categoria || 'Otros'))];
       const selCatDetalle = document.getElementById('filtro-categoria-detalle');
       const catActual = selCatDetalle.value;
       selCatDetalle.innerHTML = '<option value="Todas">Todas las categorías</option>' +
-        categoriasOrdenadas.map(c => `<option value="${c}">${c}</option>`).join('');
-      if (categoriasOrdenadas.includes(catActual)) {
+        catsUnicas.map(c => `<option value="${c}">${c}</option>`).join('');
+      if (catsUnicas.includes(catActual)) {
         selCatDetalle.value = catActual;
       }
 
@@ -1359,7 +1787,7 @@
       const tbody = document.getElementById('tabla-movimientos');
 
       if (movsDetalle.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">No hay movimientos para los filtros seleccionados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">No hay movimientos para los filtros seleccionados.</td></tr>';
         return;
       }
 
@@ -1375,6 +1803,9 @@
             <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${m.fecha}</td>
             <td class="py-3 px-4">
               <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeTipoColor}">${m.tipo}</span>
+            </td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">${m.cuenta || 'Efectivo'}</span>
             </td>
             <td class="py-3 px-4">
               <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">${m.categoria}</span>
@@ -1466,6 +1897,7 @@
       const input = document.getElementById('texto-ia');
       const btn = document.getElementById('btn-ia');
       const texto = input.value.trim();
+      const cuenta = document.getElementById('ia-cuenta').value;
       if (!texto) return;
 
       btn.disabled = true;
@@ -1475,15 +1907,15 @@
         const res = await fetch('/registrar-transaccion', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ texto })
+          body: JSON.stringify({ texto, cuenta })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al registrar');
 
         const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Registrado: ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(`✅ Registrado (${data.data.cuenta}): ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
         input.value = '';
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       } finally {
@@ -1502,6 +1934,7 @@
         fecha: document.getElementById('man-fecha').value,
         tipo: document.getElementById('man-tipo').value,
         categoria: document.getElementById('man-categoria').value,
+        cuenta: document.getElementById('man-cuenta').value,
         concepto: document.getElementById('man-concepto').value.trim(),
         monto: parseInt(document.getElementById('man-monto').value || '0', 10),
         presupuesto: parseInt(document.getElementById('man-presupuesto').value || '0', 10)
@@ -1516,11 +1949,11 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al guardar');
 
-        mostrarAlerta(`✅ Movimiento guardado: ${payload.concepto} por ${formatoMoneda.format(payload.monto)}`);
+        mostrarAlerta(`✅ Movimiento guardado (${payload.cuenta}): ${payload.concepto} por ${formatoMoneda.format(payload.monto)}`);
         document.getElementById('man-concepto').value = '';
         document.getElementById('man-monto').value = '';
         document.getElementById('man-presupuesto').value = '0';
-        await cargarDatos();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       } finally {
