@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Finanzas AI — Dashboard Analítico v2.0</title>
+  <title>Finanzas AI — Dashboard Analítico v2.1</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -70,7 +70,7 @@
             <input
               type="text"
               id="texto-ia"
-              placeholder="Ej: Gasté 25000 en almuerzo con Rappicard / Recibí 500 mil en Bancolombia..."
+              placeholder="Ej: Gasté 25000 en almuerzo con Rappicard / Recibí 500 mil en Nequi..."
               class="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
 
@@ -183,63 +183,79 @@
       </div>
     </section>
 
-    <!-- Módulo 2: Billeteras, Cuentas y Tarjetas de Crédito (Cupos) -->
+    <!-- Módulo 2: Billeteras, Cuentas y Tarjetas de Crédito (Colapsable / Acordeón) -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-lg font-bold text-slate-900">💳 Mis Cuentas, Efectivo y Tarjetas de Crédito</h2>
-          <p class="text-xs text-slate-500">Controla tu dinero disponible en efectivo/banco y el cupo libre de tus tarjetas</p>
+          <div class="flex items-center gap-2">
+            <h2 class="text-lg font-bold text-slate-900">💳 Mis Cuentas, Efectivo y Tarjetas de Crédito</h2>
+            <span id="badge-resumen-cta" class="text-xs font-semibold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full">0 cuentas</span>
+          </div>
+          <p id="subtitulo-resumen-cta" class="text-xs text-slate-500 mt-0.5">Cargando resumen de saldos y cupos...</p>
         </div>
-        <button onclick="toggleFormCuenta()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl transition">
-          + Agregar Cuenta / Tarjeta
-        </button>
-      </div>
 
-      <!-- Formulario Nueva Cuenta / Tarjeta -->
-      <form id="form-nueva-cuenta" onsubmit="crearCuenta(event)" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
-          <input type="text" id="cta-nombre" required placeholder="Ej: Rappicard, Nequi, Efectivo" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo</label>
-          <select id="cta-tipo" onchange="toggleCampoCupoCuenta()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
-            <option value="Efectivo">Efectivo</option>
-            <option value="Banco">Cuenta Bancaria / Billetera</option>
-            <option value="Tarjeta">Tarjeta de Crédito</option>
-          </select>
-        </div>
-        <div>
-          <label id="lbl-cta-saldo" class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Saldo Actual ($)</label>
-          <input type="number" id="cta-saldo" required value="0" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-        </div>
-        <div id="grupo-cta-cupo" class="hidden">
-          <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Cupo Total Tarjeta ($)</label>
-          <input type="number" id="cta-cupo" value="0" min="0" placeholder="2000000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-        </div>
-        <div class="flex justify-end">
-          <button type="submit" id="btn-guardar-cta" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition">
-            Guardar Cuenta
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            onclick="toggleAcordeonCuentas()"
+            id="btn-toggle-acordeon-cta"
+            class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
+          >
+            <span id="icono-acordeon-cta">▶</span>
+            <span id="texto-acordeon-cta">Mostrar lista</span>
+          </button>
+          <button onclick="abrirNuevaCuenta()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl transition">
+            + Agregar Cuenta / Tarjeta
           </button>
         </div>
-      </form>
+      </div>
 
-      <div id="lista-cuentas" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <p class="text-sm text-slate-400 col-span-full">Cargando cuentas...</p>
+      <!-- Contenido desplegable de Cuentas (oculto por defecto para no saturar) -->
+      <div id="contenedor-acordeon-cta" class="hidden space-y-4 pt-4 border-t border-slate-200">
+        <!-- Formulario Nueva Cuenta / Tarjeta -->
+        <form id="form-nueva-cuenta" onsubmit="crearCuenta(event)" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
+            <input type="text" id="cta-nombre" required placeholder="Ej: Rappicard, Nequi, Efectivo" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo</label>
+            <select id="cta-tipo" onchange="toggleCampoCupoCuenta()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+              <option value="Efectivo">Efectivo</option>
+              <option value="Banco">Cuenta Bancaria / Billetera</option>
+              <option value="Tarjeta">Tarjeta de Crédito</option>
+            </select>
+          </div>
+          <div>
+            <label id="lbl-cta-saldo" class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Saldo Actual ($)</label>
+            <input type="number" id="cta-saldo" required value="0" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div id="grupo-cta-cupo" class="hidden">
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Cupo Total Tarjeta ($)</label>
+            <input type="number" id="cta-cupo" value="0" min="0" placeholder="2000000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div class="flex justify-end">
+            <button type="submit" id="btn-guardar-cta" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl text-xs transition">
+              Guardar Cuenta
+            </button>
+          </div>
+        </form>
+
+        <div id="lista-cuentas" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <p class="text-sm text-slate-400 col-span-full">Cargando cuentas...</p>
+        </div>
       </div>
     </section>
 
     <!-- Módulo 3: Compromisos Recurrentes (Colapsable / Acordeón) -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="text-lg font-bold text-slate-900">📅 Deudas, Pagos e Ingresos Recurrentes</h2>
-              <span id="badge-resumen-comp" class="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">0 activos</span>
-            </div>
-            <p id="subtitulo-resumen-comp" class="text-xs text-slate-500 mt-0.5">Gestiona cuotas, suscripciones y salario mensual</p>
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 class="text-lg font-bold text-slate-900">📅 Deudas, Pagos e Ingresos Recurrentes</h2>
+            <span id="badge-resumen-comp" class="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">0 activos</span>
           </div>
+          <p id="subtitulo-resumen-comp" class="text-xs text-slate-500 mt-0.5">Gestiona cuotas, suscripciones y salario mensual</p>
         </div>
 
         <div class="flex items-center gap-2">
@@ -646,6 +662,7 @@
     let todasLasCuentas = [];
     let tipoAnalisisActual = 'Todos';
     let acordeonCompAbierto = true;
+    let acordeonCtaAbierto = false;
     let chartDona = null;
     let chartPptoReal = null;
     let chartBalanceCat = null;
@@ -674,8 +691,24 @@
 
     // --- FUNCIONES DE CUENTAS Y TARJETAS ---
 
-    function toggleFormCuenta() {
+    function toggleAcordeonCuentas() {
+      acordeonCtaAbierto = !acordeonCtaAbierto;
+      const cont = document.getElementById('contenedor-acordeon-cta');
+      const icono = document.getElementById('icono-acordeon-cta');
+      const texto = document.getElementById('texto-acordeon-cta');
+
+      cont.classList.toggle('hidden', !acordeonCtaAbierto);
+      icono.textContent = acordeonCtaAbierto ? '▼' : '▶';
+      texto.textContent = acordeonCtaAbierto ? 'Ocultar lista' : 'Mostrar lista';
+    }
+
+    function abrirNuevaCuenta() {
+      if (!acordeonCtaAbierto) toggleAcordeonCuentas();
       document.getElementById('form-nueva-cuenta').classList.toggle('hidden');
+    }
+
+    function toggleFormCuenta() {
+      abrirNuevaCuenta();
     }
 
     function toggleCampoCupoCuenta() {
@@ -706,6 +739,17 @@
     }
 
     function renderizarCuentas() {
+      const totalLiquido = todasLasCuentas
+        .filter(c => c.tipo !== 'Tarjeta')
+        .reduce((s, c) => s + c.saldo, 0);
+      const totalCupoLibre = todasLasCuentas
+        .filter(c => c.tipo === 'Tarjeta')
+        .reduce((s, c) => s + c.cupo_disponible, 0);
+
+      document.getElementById('badge-resumen-cta').textContent = `${todasLasCuentas.length} cuentas`;
+      document.getElementById('subtitulo-resumen-cta').textContent =
+        `Disponible en cuentas/efectivo: ${formatoMoneda.format(totalLiquido)} · Cupo libre en tarjetas: ${formatoMoneda.format(totalCupoLibre)}`;
+
       const contenedor = document.getElementById('lista-cuentas');
       if (todasLasCuentas.length === 0) {
         contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full">No hay cuentas registradas.</p>';
@@ -786,7 +830,7 @@
         document.getElementById('cta-saldo').value = '0';
         document.getElementById('cta-cupo').value = '0';
         document.getElementById('form-nueva-cuenta').classList.add('hidden');
-        await cargarCuentas();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       } finally {
@@ -837,7 +881,7 @@
 
         cerrarModalCta();
         mostrarAlerta('✅ ' + data.message);
-        await cargarCuentas();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       }
@@ -850,7 +894,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al eliminar cuenta');
         mostrarAlerta('🗑️ ' + data.message);
-        await cargarCuentas();
+        await sincronizarTodo();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
       }
@@ -1555,7 +1599,7 @@
       }
     }
 
-    // --- FUNCIONES DEL DASHBOARD Y ANÁLISIS UNIFICADO CORREGIDO ---
+    // --- FUNCIONES DEL DASHBOARD Y ANÁLISIS UNIFICADO ---
 
     function cambiarTipoAnalisis(tipo) {
       tipoAnalisisActual = tipo;
@@ -1629,7 +1673,7 @@
       const anioSel = document.getElementById('filtro-anio').value;
 
       document.getElementById('badge-periodo').textContent =
-        (mesSel === 'Todos' && anioSel === 'Todos') ? 'Histórico completo' : `${mesSel} ${anioSel !== 'Todos' ? anioSel : ''}`;
+        (mesSel === 'Todos' && anioSel === 'Todos') ? 'Cuentas + Flujo' : `${mesSel} ${anioSel !== 'Todos' ? anioSel : ''}`;
 
       return todosLosMovimientos.filter(m => {
         const coincideMes = mesSel === 'Todos' || m.mes.toLowerCase() === mesSel.toLowerCase();
@@ -1650,7 +1694,7 @@
       const sumEgrPpto = egresos.reduce((acc, m) => acc + m.presupuesto, 0);
       const flujoPeriodo = sumIngReal - sumEgrReal;
 
-      // Suma el saldo actual de tus cuentas (Efectivo y Banco, excluyendo Tarjetas de Crédito porque son cupo/deuda)
+      // Suma el saldo actual de tus cuentas líquidas (Efectivo y Banco, excluyendo Tarjetas de Crédito)
       const saldoCuentasLiquidas = todasLasCuentas
         .filter(c => c.tipo !== 'Tarjeta')
         .reduce((acc, c) => acc + c.saldo, 0);
@@ -1723,8 +1767,6 @@
           totalReal += item.real;
           totalNetoTodos += item.esIngreso ? item.real : -item.real;
 
-          // Para ingresos: Real - Ppto (más ingreso = positivo/verde)
-          // Para egresos: Ppto - Real (gastar menos del ppto = positivo/verde)
           const dif = item.esIngreso ? (item.real - item.ppto) : (item.ppto - item.real);
           const signoReal = tipoAnalisisActual === 'Todos' ? (item.esIngreso ? '+' : '-') : '';
 
