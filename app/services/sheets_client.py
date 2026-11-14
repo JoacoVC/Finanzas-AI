@@ -7,7 +7,9 @@ from app.core.config import settings
 class SheetsClient:
     def __init__(self):
         self.client = None
+        self.spreadsheet = None
         self.sheet = None
+        self.compromisos_sheet = None
 
     def connect(self):
         if not os.path.exists(settings.google_credentials_path):
@@ -18,9 +20,24 @@ class SheetsClient:
             settings.google_credentials_path, scopes=scopes
         )
         self.client = gspread.authorize(credentials)
-        sh = self.client.open_by_key(settings.sheet_id)
-        self.sheet = sh.worksheet(settings.worksheet_name)
+        self.spreadsheet = self.client.open_by_key(settings.sheet_id)
+        self.sheet = self.spreadsheet.worksheet(settings.worksheet_name)
         return self.sheet
+
+    def _get_compromisos_sheet(self):
+        if self.spreadsheet is None:
+            self.connect()
+        if self.compromisos_sheet is None:
+            try:
+                self.compromisos_sheet = self.spreadsheet.worksheet("Compromisos")
+            except gspread.WorksheetNotFound:
+                self.compromisos_sheet = self.spreadsheet.add_worksheet(title="Compromisos", rows=200, cols=10)
+                encabezados = [
+                    "ID", "Nombre", "Modalidad", "Categoria", "MontoCuota",
+                    "CuotasTotales", "CuotasPagadas", "UltimoMesPagado", "Estado"
+                ]
+                self.compromisos_sheet.append_row(encabezados, value_input_option="USER_ENTERED")
+        return self.compromisos_sheet
 
     def append_record(self, record_data: list):
         if self.sheet is None:
@@ -29,7 +46,6 @@ class SheetsClient:
         record_id = str(uuid.uuid4())[:8]
         row_to_insert = record_data + [record_id]
         self.sheet.append_row(row_to_insert, value_input_option="USER_ENTERED")
-        
         return record_id
 
     def get_all_records(self) -> list:
@@ -41,7 +57,6 @@ class SheetsClient:
             return []
 
         registros = []
-        # Saltamos la fila 1 de encabezados (Fecha, Mes, Año, Tipo, Categoria, Concepto, Presupuesto, Monto, ID)
         for fila in filas[1:]:
             if not fila or not fila[0].strip():
                 continue
@@ -66,5 +81,91 @@ class SheetsClient:
             })
         
         return registros
+
+    # --- MÉTODOS PARA COMPROMISOS Y DEUDAS RECURRENTES ---
+
+    def crear_compromiso(self, nombre: str, modalidad: str, categoria: str, monto_cuota: int, cuotas_totales: int = 0) -> dict:
+        ws = self._get_compromisos_sheet()
+        comp_id = str(uuid.uuid4())[:8]
+        fila = [
+            comp_id,
+            nombre,
+            modalidad,       # "Recurrente" o "Cuotas"
+            categoria,       # "Deudas", "Servicios", "Suscripciones"
+            monto_cuota,
+            cuotas_totales,  # 0 si es recurrente indefinido
+            0,               # CuotasPagadas inicia en 0
+            "",              # UltimoMesPagado (ej. "2026-11")
+            "Activo"
+        ]
+        ws.append_row(fila, value_input_option="USER_ENTERED")
+        return {
+            "id": comp_id, "nombre": nombre, "modalidad": modalidad,
+            "categoria": categoria, "monto_cuota": monto_cuota,
+            "cuotas_totales": cuotas_totales, "cuotas_pagadas": 0,
+            "ultimo_mes_pagado": "", "estado": "Activo"
+        }
+
+    def listar_compromisos_activos(self) -> list:
+        ws = self._get_compromisos_sheet()
+        filas = ws.get_all_values()
+        if len(filas) <= 1:
+            return []
+
+        activos = []
+        for idx, fila in enumerate(filas[1:], start=2):
+            if not fila or len(fila) < 9:
+                continue
+            estado = fila[8].strip()
+            if estado != "Activo":
+                continue
+
+            activos.append({
+                "row_index": idx,
+                "id": fila[0],
+                "nombre": fila[1],
+                "modalidad": fila[2],
+                "categoria": fila[3],
+                "monto_cuota": int(float(str(fila[4]).replace("$", "").replace(",", "").replace(".", "") or 0)),
+                "cuotas_totales": int(float(fila[5] or 0)),
+                "cuotas_pagadas": int(float(fila[6] or 0)),
+                "ultimo_mes_pagado": fila[7],
+                "estado": estado
+            })
+        return activos
+
+    def registrar_pago_compromiso(self, comp_id: str, periodo_actual: str) -> dict:
+        ws = self._get_compromisos_sheet()
+        activos = self.listar_compromisos_activos()
+        objetivo = next((c for c in activos if c["id"] == comp_id), None)
+        if not objetivo:
+            raise ValueError("Compromiso no encontrado o ya finalizado.")
+
+        nuevas_pagadas = objetivo["cuotas_pagadas"] + 1
+        finalizado = False
+        nuevo_estado = "Activo"
+
+        if objetivo["modalidad"] == "Cuotas" and objetivo["cuotas_totales"] > 0:
+            if nuevas_pagadas >= objetivo["cuotas_totales"]:
+                finalizado = True
+                nuevo_estado = "Finalizado"
+
+        row_idx = objetivo["row_index"]
+        # Actualizar columnas G (7: CuotasPagadas), H (8: UltimoMesPagado) e I (9: Estado)
+        ws.update(f"G{row_idx}:I{row_idx}", [[nuevas_pagadas, periodo_actual, nuevo_estado]])
+
+        objetivo["cuotas_pagadas"] = nuevas_pagadas
+        objetivo["ultimo_mes_pagado"] = periodo_actual
+        objetivo["estado"] = nuevo_estado
+        objetivo["finalizado"] = finalizado
+        return objetivo
+
+    def cancelar_compromiso(self, comp_id: str):
+        ws = self._get_compromisos_sheet()
+        activos = self.listar_compromisos_activos()
+        objetivo = next((c for c in activos if c["id"] == comp_id), None)
+        if not objetivo:
+            raise ValueError("Compromiso no encontrado.")
+        ws.update(f"I{objetivo['row_index']}", [["Cancelado"]])
 
 sheets_client = SheetsClient()

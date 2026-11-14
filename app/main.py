@@ -7,9 +7,8 @@ from datetime import datetime
 from app.services.sheets_client import sheets_client
 from app.services.llm_factory import llm_factory
 
-app = FastAPI(title="Finanzas AI Backend", version="1.1.0")
+app = FastAPI(title="Finanzas AI Backend", version="1.2.0")
 
-# Asegurar que exista la carpeta static y montarla
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -18,12 +17,19 @@ class MensajeRequest(BaseModel):
     texto: str
 
 class TransaccionManualRequest(BaseModel):
-    fecha: str          # Formato esperado: YYYY-MM-DD desde el input HTML
-    tipo: str           # "Ingreso" o "Egreso"
+    fecha: str
+    tipo: str
     categoria: str
     concepto: str
     presupuesto: int = 0
     monto: int
+
+class CompromisoManualRequest(BaseModel):
+    nombre: str
+    modalidad: str        # "Recurrente" o "Cuotas"
+    categoria: str        # "Deudas", "Servicios", "Suscripciones"
+    monto_cuota: int
+    cuotas_totales: int = 0
 
 def mes_espanol(mes_num: int) -> str:
     meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
@@ -35,23 +41,15 @@ def servir_frontend():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"status": "ok", "message": "API funcionando. Crea app/static/index.html para ver la interfaz."}
-
-@app.get("/health", tags=["Estado"])
-def health_check():
     return {"status": "ok", "message": "API funcionando."}
 
 @app.get("/movimientos", tags=["Transacciones"])
 def obtener_movimientos():
     try:
         registros = sheets_client.get_all_records()
-        
         total_ingresos = sum(r["monto"] for r in registros if r["tipo"].lower() == "ingreso")
         total_egresos = sum(r["monto"] for r in registros if r["tipo"].lower() == "egreso")
         balance = total_ingresos - total_egresos
-
-        # Devolvemos los más recientes primero
-        registros_invertidos = list(reversed(registros))
 
         return {
             "status": "success",
@@ -60,7 +58,7 @@ def obtener_movimientos():
                 "egresos": total_egresos,
                 "balance": balance
             },
-            "movimientos": registros_invertidos
+            "movimientos": list(reversed(registros))
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -78,20 +76,13 @@ def registrar_transaccion(req: MensajeRequest):
         monto = info.get("monto", 0)
 
         ahora = datetime.now()
-        fecha = ahora.strftime("%d/%m/%Y")
-        mes = mes_espanol(ahora.month)
-        anio = ahora.year
-
-        fila = [fecha, mes, anio, tipo, categoria, concepto, 0, monto]
+        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
         registro_id = sheets_client.append_record(fila)
 
         return {
             "status": "success",
             "message": "Transacción registrada con IA exitosamente",
-            "data": {
-                "id": registro_id,
-                "fila_insertada": fila
-            }
+            "data": {"id": registro_id, "fila_insertada": fila}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -99,31 +90,111 @@ def registrar_transaccion(req: MensajeRequest):
 @app.post("/registrar-manual", tags=["Transacciones"])
 def registrar_manual(req: TransaccionManualRequest):
     try:
-        # Convertir fecha YYYY-MM-DD (HTML) a DD/MM/YYYY (Google Sheets)
         dt = datetime.strptime(req.fecha, "%Y-%m-%d")
-        fecha_formateada = dt.strftime("%d/%m/%Y")
-        mes = mes_espanol(dt.month)
-        anio = dt.year
-
         fila = [
-            fecha_formateada,
-            mes,
-            anio,
-            req.tipo,
-            req.categoria,
-            req.concepto,
-            req.presupuesto,
-            req.monto
+            dt.strftime("%d/%m/%Y"), mes_espanol(dt.month), dt.year,
+            req.tipo, req.categoria, req.concepto, req.presupuesto, req.monto
         ]
         registro_id = sheets_client.append_record(fila)
 
         return {
             "status": "success",
             "message": "Transacción manual registrada exitosamente",
-            "data": {
-                "id": registro_id,
-                "fila_insertada": fila
-            }
+            "data": {"id": registro_id, "fila_insertada": fila}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- ENDPOINTS DE COMPROMISOS Y DEUDAS RECURRENTES ---
+
+@app.get("/compromisos", tags=["Compromisos"])
+def listar_compromisos():
+    try:
+        activos = sheets_client.listar_compromisos_activos()
+        periodo_actual = datetime.now().strftime("%Y-%m")
+        for c in activos:
+            c["pagado_este_mes"] = (c["ultimo_mes_pagado"] == periodo_actual)
+        return {"status": "success", "periodo_actual": periodo_actual, "compromisos": activos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/compromisos/ia", tags=["Compromisos"])
+def crear_compromiso_ia(req: MensajeRequest):
+    try:
+        info = llm_factory.parsear_compromiso(req.texto)
+        if not info:
+            raise HTTPException(status_code=400, detail="La IA no pudo interpretar el compromiso.")
+        
+        creado = sheets_client.crear_compromiso(
+            nombre=info.get("nombre", "Compromiso"),
+            modalidad=info.get("modalidad", "Recurrente"),
+            categoria=info.get("categoria", "Deudas"),
+            monto_cuota=int(info.get("monto_cuota", 0)),
+            cuotas_totales=int(info.get("cuotas_totales", 0))
+        )
+        return {"status": "success", "compromiso": creado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/compromisos/manual", tags=["Compromisos"])
+def crear_compromiso_manual(req: CompromisoManualRequest):
+    try:
+        cuotas = req.cuotas_totales if req.modalidad == "Cuotas" else 0
+        creado = sheets_client.crear_compromiso(
+            nombre=req.nombre,
+            modalidad=req.modalidad,
+            categoria=req.categoria,
+            monto_cuota=req.monto_cuota,
+            cuotas_totales=cuotas
+        )
+        return {"status": "success", "compromiso": creado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/compromisos/{comp_id}/pagar", tags=["Compromisos"])
+def pagar_compromiso(comp_id: str):
+    try:
+        ahora = datetime.now()
+        periodo_actual = ahora.strftime("%Y-%m")
+        resultado = sheets_client.registrar_pago_compromiso(comp_id, periodo_actual)
+
+        # Armar concepto descriptivo para el historial de gastos
+        if resultado["modalidad"] == "Cuotas":
+            concepto = f"{resultado['nombre']} (Cuota {resultado['cuotas_pagadas']}/{resultado['cuotas_totales']})"
+        else:
+            concepto = f"{resultado['nombre']} ({mes_espanol(ahora.month)})"
+
+        # Registrar automáticamente el Egreso en la pestaña principal Registros
+        fila = [
+            ahora.strftime("%d/%m/%Y"),
+            mes_espanol(ahora.month),
+            ahora.year,
+            "Egreso",
+            resultado["categoria"],
+            concepto,
+            resultado["monto_cuota"],
+            resultado["monto_cuota"]
+        ]
+        sheets_client.append_record(fila)
+
+        mensaje = (
+            f"🎉 ¡Deuda finalizada! Pagaste la última cuota de '{resultado['nombre']}'."
+            if resultado["finalizado"]
+            else f"✅ Pago registrado: {concepto} por ${resultado['monto_cuota']:,}".replace(",", ".")
+        )
+
+        return {
+            "status": "success",
+            "finalizado": resultado["finalizado"],
+            "message": mensaje
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/compromisos/{comp_id}", tags=["Compromisos"])
+def eliminar_compromiso(comp_id: str):
+    try:
+        sheets_client.cancelar_compromiso(comp_id)
+        return {"status": "success", "message": "Compromiso cancelado y eliminado de la lista activa."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

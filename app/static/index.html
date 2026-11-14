@@ -3,94 +3,98 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Finanzas AI — Panel Personal</title>
+  <title>Finanzas AI — Dashboard Analítico</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen font-sans">
 
   <!-- Barra superior -->
   <header class="bg-slate-900 text-white shadow-md">
-    <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-2">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center gap-2.5">
         <span class="text-2xl">💸</span>
-        <h1 class="text-xl font-bold tracking-tight">Finanzas AI</h1>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight leading-none">Finanzas AI</h1>
+          <p class="text-xs text-slate-400 mt-0.5">Panel Inteligente & Control de Compromisos</p>
+        </div>
       </div>
-      <button onclick="cargarDatos()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg transition">
-        ↻ Actualizar datos
-      </button>
+
+      <!-- Filtros Globales (Mes, Año) -->
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="filtro-mes" onchange="actualizarDashboard()" class="bg-slate-800 text-white text-xs border border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="Todos">Todos los meses</option>
+          <option value="Enero">Enero</option>
+          <option value="Febrero">Febrero</option>
+          <option value="Marzo">Marzo</option>
+          <option value="Abril">Abril</option>
+          <option value="Mayo">Mayo</option>
+          <option value="Junio">Junio</option>
+          <option value="Julio">Julio</option>
+          <option value="Agosto">Agosto</option>
+          <option value="Septiembre">Septiembre</option>
+          <option value="Octubre">Octubre</option>
+          <option value="Noviembre">Noviembre</option>
+          <option value="Diciembre">Diciembre</option>
+        </select>
+
+        <select id="filtro-anio" onchange="actualizarDashboard()" class="bg-slate-800 text-white text-xs border border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="Todos">Todos los años</option>
+        </select>
+
+        <button onclick="sincronizarTodo()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3 py-2 rounded-lg transition">
+          ↻ Sincronizar
+        </button>
+      </div>
     </div>
   </header>
 
-  <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-    <!-- Tarjetas de Resumen (Ingresos, Egresos, Balance) -->
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <p class="text-sm font-medium text-slate-500">Total Ingresos</p>
-        <p id="card-ingresos" class="text-3xl font-bold text-emerald-600 mt-2">$0</p>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <p class="text-sm font-medium text-slate-500">Total Egresos</p>
-        <p id="card-egresos" class="text-3xl font-bold text-rose-600 mt-2">$0</p>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <p class="text-sm font-medium text-slate-500">Balance General</p>
-        <p id="card-balance" class="text-3xl font-bold text-slate-900 mt-2">$0</p>
-      </div>
-    </section>
+    <!-- Alerta Global -->
+    <div id="alerta" class="hidden p-4 rounded-xl text-sm font-medium shadow-sm"></div>
 
-    <!-- Módulo de Registro (IA vs Manual) -->
+    <!-- Módulo 1: Registro de Movimientos (IA vs Manual) -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <!-- Pestañas de selección -->
       <div class="flex border-b border-slate-200 bg-slate-100/60">
-        <button id="tab-ia" onclick="cambiarModo('ia')" class="flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition">
+        <button id="tab-ia" onclick="cambiarModo('ia')" class="flex-1 py-3 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition">
           ✨ Registro Rápido con IA
         </button>
-        <button id="tab-manual" onclick="cambiarModo('manual')" class="flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition">
+        <button id="tab-manual" onclick="cambiarModo('manual')" class="flex-1 py-3 text-sm font-semibold text-slate-500 hover:text-slate-700 transition">
           📝 Registro Manual
         </button>
       </div>
 
-      <div class="p-6">
-        <!-- Alerta de notificación -->
-        <div id="alerta" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium"></div>
-
-        <!-- Formulario 1: Lenguaje Natural con IA -->
-        <form id="form-ia" onsubmit="enviarIA(event)" class="space-y-4">
-          <div>
-            <label for="texto-ia" class="block text-sm font-medium text-slate-700 mb-1">
-              Describe tu movimiento como si hablaras con un amigo
-            </label>
-            <div class="flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                id="texto-ia"
-                required
-                placeholder="Ej: Gasté 25000 en pasajes y comida / Me pagaron 500000 de trabajo"
-                class="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <button
-                type="submit"
-                id="btn-ia"
-                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-3 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
-              >
-                Registrar con IA
-              </button>
-            </div>
-          </div>
+      <div class="p-5">
+        <!-- Formulario 1: IA -->
+        <form id="form-ia" onsubmit="enviarIA(event)" class="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            id="texto-ia"
+            required
+            placeholder="Ej: Gasté 25000 en almuerzo / Me pagaron 500000 de trabajo"
+            class="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <button
+            type="submit"
+            id="btn-ia"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
+          >
+            Registrar con IA
+          </button>
         </form>
 
-        <!-- Formulario 2: Registro Manual Campo por Campo -->
+        <!-- Formulario 2: Manual -->
         <form id="form-manual" onsubmit="enviarManual(event)" class="hidden space-y-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Fecha</label>
-              <input type="date" id="man-fecha" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <input type="date" id="man-fecha" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
 
             <div>
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Tipo</label>
-              <select id="man-tipo" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <select id="man-tipo" onchange="actualizarCategoriasManual()" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="Egreso">Egreso</option>
                 <option value="Ingreso">Ingreso</option>
               </select>
@@ -98,10 +102,12 @@
 
             <div>
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Categoría</label>
-              <select id="man-categoria" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="Gastos">Gastos</option>
+              <select id="man-categoria" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="Comida">Comida</option>
+                <option value="Transporte">Transporte</option>
+                <option value="Suscripciones">Suscripciones</option>
+                <option value="Compras">Compras</option>
                 <option value="Servicios">Servicios</option>
-                <option value="Trabajo">Trabajo</option>
                 <option value="Ahorro">Ahorro</option>
                 <option value="Préstamo">Préstamo</option>
                 <option value="Deudas">Deudas</option>
@@ -109,27 +115,26 @@
               </select>
             </div>
 
-            <div class="sm:col-span-2">
+            <div class="md:col-span-2">
               <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Concepto</label>
-              <input type="text" id="man-concepto" required placeholder="Ej: Mercado semanal" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <input type="text" id="man-concepto" required placeholder="Ej: Mercado semanal" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Monto ($)</label>
-              <input type="number" id="man-monto" required min="1" placeholder="25000" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Presupuesto ($ - Opcional)</label>
-              <input type="number" id="man-presupuesto" value="0" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Monto Real ($)</label>
+              <input type="number" id="man-monto" required min="0" placeholder="25000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
           </div>
 
-          <div class="flex justify-end pt-2">
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-semibold text-slate-600 uppercase">Presupuesto ($):</label>
+              <input type="number" id="man-presupuesto" value="0" min="0" class="w-36 rounded-xl border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
             <button
               type="submit"
               id="btn-manual"
-              class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
+              class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-6 py-2 rounded-xl text-sm transition shadow-sm disabled:opacity-50"
             >
               Guardar Movimiento Manual
             </button>
@@ -138,10 +143,201 @@
       </div>
     </section>
 
-    <!-- Tabla de Movimientos Recientes -->
+    <!-- Módulo 2: Deudas y Pagos Recurrentes -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">📅 Deudas y Pagos Recurrentes</h2>
+          <p class="text-xs text-slate-500">Marca el chulito (✓) para registrar el pago del mes automáticamente</p>
+        </div>
+        <button onclick="toggleFormCompromiso()" class="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-xl transition">
+          + Nuevo Compromiso / Deuda
+        </button>
+      </div>
+
+      <!-- Formulario Desplegable para agregar Deuda o Pago Recurrente -->
+      <div id="panel-nuevo-compromiso" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+        <div class="flex gap-2 border-b border-slate-200 pb-2">
+          <button type="button" id="subtab-comp-ia" onclick="cambiarModoCompromiso('ia')" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">
+            ✨ Crear con IA
+          </button>
+          <button type="button" id="subtab-comp-man" onclick="cambiarModoCompromiso('manual')" class="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg">
+            📝 Crear Manualmente
+          </button>
+        </div>
+
+        <!-- Opción IA -->
+        <form id="form-comp-ia" onsubmit="crearCompromisoIA(event)" class="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            id="texto-comp-ia"
+            required
+            placeholder="Ej: Plan de celular 50000 todos los meses / Debo 2 millones en 4 cuotas de 500000"
+            class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <button type="submit" id="btn-comp-ia" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs transition">
+            Agregar con IA
+          </button>
+        </form>
+
+        <!-- Opción Manual -->
+        <form id="form-comp-manual" onsubmit="crearCompromisoManual(event)" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Nombre</label>
+            <input type="text" id="comp-nombre" required placeholder="Ej: Plan Celular" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Tipo de Pago</label>
+            <select id="comp-modalidad" onchange="toggleCampoCuotas()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+              <option value="Recurrente">Mensual sin fin</option>
+              <option value="Cuotas">A cuotas (con fin)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Categoría</label>
+            <select id="comp-categoria" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+              <option value="Servicios">Servicios</option>
+              <option value="Deudas">Deudas</option>
+              <option value="Suscripciones">Suscripciones</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Valor Mensual ($)</label>
+            <input type="number" id="comp-monto" required min="1" placeholder="50000" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div id="grupo-cuotas" class="hidden">
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Total Cuotas</label>
+            <input type="number" id="comp-cuotas" min="1" value="1" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+          </div>
+          <div class="sm:col-span-2 md:col-span-5 flex justify-end">
+            <button type="submit" id="btn-comp-man" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2 rounded-xl text-xs transition">
+              Guardar Compromiso
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Lista / Tarjetas de Deudas y Recurrentes Activos -->
+      <div id="lista-compromisos" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <p class="text-sm text-slate-400 col-span-full">Cargando compromisos...</p>
+      </div>
+    </section>
+
+    <!-- Tarjetas Principales (Ingresos, Egresos, Saldo del Periodo) -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Ingresos Totales</p>
+          <span class="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-medium">Real</span>
+        </div>
+        <p id="card-ingresos" class="text-2xl font-bold text-emerald-600 mt-2">$0</p>
+        <div class="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs text-slate-500">
+          <span>Ppto: <strong id="ing-ppto" class="text-slate-700">$0</strong></span>
+          <span>Dif: <strong id="ing-dif" class="text-slate-700">$0</strong></span>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Egresos Totales</p>
+          <span class="text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md font-medium">Real</span>
+        </div>
+        <p id="card-egresos" class="text-2xl font-bold text-rose-600 mt-2">$0</p>
+        <div class="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs text-slate-500">
+          <span>Ppto: <strong id="egr-ppto" class="text-slate-700">$0</strong></span>
+          <span>Dif: <strong id="egr-dif" class="text-slate-700">$0</strong></span>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Saldo del Periodo</p>
+          <span id="badge-periodo" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">Histórico</span>
+        </div>
+        <p id="card-balance" class="text-2xl font-bold text-slate-900 mt-2">$0</p>
+        <p class="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+          Ingresos menos Egresos filtrados
+        </p>
+      </div>
+    </section>
+
+    <!-- Selector Unificado de Análisis (Todos vs Egresos vs Ingresos) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Análisis Unificado por Categoría</h2>
+          <p class="text-xs text-slate-500">Visualiza todos los movimientos juntos o filtra por Egresos e Ingresos</p>
+        </div>
+
+        <div class="inline-flex rounded-xl bg-slate-100 p-1 self-start gap-1">
+          <button id="btn-vista-todos" onclick="cambiarTipoAnalisis('Todos')" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm transition">
+            📊 Ver Todos
+          </button>
+          <button id="btn-vista-egreso" onclick="cambiarTipoAnalisis('Egreso')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition">
+            📉 Ver Egresos
+          </button>
+          <button id="btn-vista-ingreso" onclick="cambiarTipoAnalisis('Ingreso')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition">
+            📈 Ver Ingresos
+          </button>
+        </div>
+      </div>
+
+      <!-- Fila 1: Tabla Resumen por Categoría + Gráfico de Dona -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div class="lg:col-span-7 border border-slate-200 rounded-xl overflow-hidden">
+          <div class="bg-slate-800 text-white px-4 py-2.5 flex justify-between items-center">
+            <span id="titulo-tabla-resumen" class="text-xs font-bold uppercase tracking-wider">Resumen General por Categoría</span>
+            <span class="text-[11px] text-slate-300">Haz clic en una fila para filtrar detalle</span>
+          </div>
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
+                <th class="py-2.5 px-4">Categoría</th>
+                <th class="py-2.5 px-4 text-right">Ppto</th>
+                <th class="py-2.5 px-4 text-right">Real</th>
+                <th class="py-2.5 px-4 text-right">Dif</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-resumen-categorias" class="divide-y divide-slate-100"></tbody>
+            <tfoot id="tfoot-resumen-categorias" class="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300"></tfoot>
+          </table>
+        </div>
+
+        <div class="lg:col-span-5 border border-slate-200 rounded-xl p-4 bg-slate-50/40">
+          <h3 id="titulo-dona" class="text-xs font-bold uppercase text-slate-600 mb-3 text-center">Distribución General (%)</h3>
+          <div class="relative h-60 flex items-center justify-center">
+            <canvas id="chart-dona"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila 2: Gráficos Comparativos -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="border border-slate-200 rounded-xl p-4">
+          <h3 id="titulo-barras-ppto" class="text-xs font-bold uppercase text-slate-600 mb-3">Presupuesto vs Real por Categoría</h3>
+          <div class="relative h-64">
+            <canvas id="chart-ppto-real"></canvas>
+          </div>
+        </div>
+
+        <div class="border border-slate-200 rounded-xl p-4">
+          <h3 class="text-xs font-bold uppercase text-slate-600 mb-3">Balance Comparativo por Categoría (Ingresos vs Egresos)</h3>
+          <div class="relative h-64">
+            <canvas id="chart-balance-categorias"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabla Unificada de Detalles / Historial Completo -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-        <h2 class="font-bold text-slate-800">Historial de Movimientos</h2>
+      <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+        <div class="flex items-center gap-3">
+          <h2 id="titulo-detalle" class="font-bold text-slate-800">Historial Completo de Movimientos</h2>
+          <select id="filtro-categoria-detalle" onchange="renderizarDetalle()" class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700">
+            <option value="Todas">Todas las categorías</option>
+          </select>
+        </div>
         <span id="contador-registros" class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">0 registros</span>
       </div>
 
@@ -153,14 +349,11 @@
               <th class="py-3 px-4">Tipo</th>
               <th class="py-3 px-4">Categoría</th>
               <th class="py-3 px-4">Concepto</th>
-              <th class="py-3 px-4 text-right">Monto</th>
+              <th class="py-3 px-4 text-right">Ppto</th>
+              <th class="py-3 px-4 text-right">Real</th>
             </tr>
           </thead>
-          <tbody id="tabla-movimientos" class="divide-y divide-slate-100 text-sm">
-            <tr>
-              <td colspan="5" class="py-8 text-center text-slate-400">Cargando movimientos desde Google Sheets...</td>
-            </tr>
-          </tbody>
+          <tbody id="tabla-movimientos" class="divide-y divide-slate-100 text-sm"></tbody>
         </table>
       </div>
     </section>
@@ -168,14 +361,35 @@
   </main>
 
   <script>
+    let todosLosMovimientos = [];
+    let tipoAnalisisActual = 'Todos';
+    let chartDona = null;
+    let chartPptoReal = null;
+    let chartBalanceCat = null;
+
     const formatoMoneda = new Intl.NumberFormat('es-CO', {
       style: 'currency',
       currency: 'COP',
       maximumFractionDigits: 0
     });
 
-    // Inicializar fecha de hoy en el formulario manual
-    document.getElementById('man-fecha').valueAsDate = new Date();
+    function establecerFechaLocalHoy() {
+      const hoy = new Date();
+      const anio = hoy.getFullYear();
+      const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+      const dia = String(hoy.getDate()).padStart(2, '0');
+      document.getElementById('man-fecha').value = `${anio}-${mes}-${dia}`;
+    }
+    establecerFechaLocalHoy();
+
+    function actualizarCategoriasManual() {
+      const tipo = document.getElementById('man-tipo').value;
+      const selectCat = document.getElementById('man-categoria');
+      const opciones = tipo === 'Egreso'
+        ? ['Comida', 'Transporte', 'Suscripciones', 'Compras', 'Servicios', 'Ahorro', 'Préstamo', 'Deudas', 'Otros']
+        : ['Trabajo', 'Préstamo', 'Deudas', 'Otros'];
+      selectCat.innerHTML = opciones.map(op => `<option value="${op}">${op}</option>`).join('');
+    }
 
     function cambiarModo(modo) {
       const formIA = document.getElementById('form-ia');
@@ -186,74 +400,520 @@
       if (modo === 'ia') {
         formIA.classList.remove('hidden');
         formManual.classList.add('hidden');
-        tabIA.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
-        tabManual.className = "flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
+        tabIA.className = "flex-1 py-3 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
+        tabManual.className = "flex-1 py-3 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
       } else {
         formIA.classList.add('hidden');
         formManual.classList.remove('hidden');
-        tabManual.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
-        tabIA.className = "flex-1 py-3.5 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
+        tabManual.className = "flex-1 py-3 text-sm font-semibold text-indigo-600 border-b-2 border-indigo-600 bg-white transition";
+        tabIA.className = "flex-1 py-3 text-sm font-semibold text-slate-500 hover:text-slate-700 transition";
+        establecerFechaLocalHoy();
       }
+    }
+
+    // --- FUNCIONES DE DEUDAS Y COMPROMISOS ---
+
+    function toggleFormCompromiso() {
+      document.getElementById('panel-nuevo-compromiso').classList.toggle('hidden');
+    }
+
+    function cambiarModoCompromiso(modo) {
+      const fIA = document.getElementById('form-comp-ia');
+      const fMan = document.getElementById('form-comp-manual');
+      const bIA = document.getElementById('subtab-comp-ia');
+      const bMan = document.getElementById('subtab-comp-man');
+
+      if (modo === 'ia') {
+        fIA.classList.remove('hidden');
+        fMan.classList.add('hidden');
+        bIA.className = "text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg";
+        bMan.className = "text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg";
+      } else {
+        fIA.classList.add('hidden');
+        fMan.classList.remove('hidden');
+        bMan.className = "text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg";
+        bIA.className = "text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg";
+      }
+    }
+
+    function toggleCampoCuotas() {
+      const mod = document.getElementById('comp-modalidad').value;
+      const grupo = document.getElementById('grupo-cuotas');
+      if (mod === 'Cuotas') {
+        grupo.classList.remove('hidden');
+      } else {
+        grupo.classList.add('hidden');
+      }
+    }
+
+    async function cargarCompromisos() {
+      try {
+        const res = await fetch('/compromisos');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al cargar compromisos');
+
+        const contenedor = document.getElementById('lista-compromisos');
+        const lista = data.compromisos || [];
+
+        if (lista.length === 0) {
+          contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full py-2">No tienes deudas ni pagos recurrentes activos. Agrega uno arriba.</p>';
+          return;
+        }
+
+        contenedor.innerHTML = lista.map(c => {
+          const esCuotas = c.modalidad === 'Cuotas';
+          const progresoPct = esCuotas && c.cuotas_totales > 0
+            ? Math.min(100, Math.round((c.cuotas_pagadas / c.cuotas_totales) * 100))
+            : 0;
+          const saldoRestante = esCuotas
+            ? Math.max(0, (c.cuotas_totales - c.cuotas_pagadas) * c.monto_cuota)
+            : 0;
+
+          const estadoMesBadge = c.pagado_este_mes
+            ? `<span class="text-[11px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">✓ Pagado este mes</span>`
+            : `<span class="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Pendiente este mes</span>`;
+
+          const detalleCuotasHTML = esCuotas
+            ? `
+              <div class="mt-3 space-y-1.5">
+                <div class="flex justify-between text-xs text-slate-600">
+                  <span>Cuota <strong>${c.cuotas_pagadas} de ${c.cuotas_totales}</strong></span>
+                  <span>Resta: <strong>${formatoMoneda.format(saldoRestante)}</strong></span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-2">
+                  <div class="bg-indigo-600 h-2 rounded-full transition-all" style="width: ${progresoPct}%"></div>
+                </div>
+              </div>
+            `
+            : `<p class="mt-3 text-xs text-slate-500">Pago fijo mensual (sin fecha de fin)</p>`;
+
+          return `
+            <div class="border border-slate-200 rounded-xl p-4 flex flex-col justify-between bg-slate-50/50 hover:bg-white transition">
+              <div>
+                <div class="flex justify-between items-start gap-2">
+                  <div>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">${c.categoria}</span>
+                    <h3 class="font-bold text-slate-900 text-base">${c.nombre}</h3>
+                  </div>
+                  ${estadoMesBadge}
+                </div>
+                <p class="text-xl font-extrabold text-slate-800 mt-1">${formatoMoneda.format(c.monto_cuota)} <span class="text-xs font-normal text-slate-500">/ mes</span></p>
+                ${detalleCuotasHTML}
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between gap-2">
+                <button
+                  onclick="pagarCompromiso('${c.id}', this)"
+                  class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  ✓ Registrar pago
+                </button>
+                <button
+                  onclick="cancelarCompromiso('${c.id}')"
+                  title="Cancelar o finalizar este compromiso"
+                  class="text-xs text-slate-400 hover:text-rose-600 px-2.5 py-2 rounded-lg border border-transparent hover:border-rose-200 transition"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function crearCompromisoIA(e) {
+      e.preventDefault();
+      const input = document.getElementById('texto-comp-ia');
+      const btn = document.getElementById('btn-comp-ia');
+      btn.disabled = true;
+      btn.textContent = 'Procesando...';
+
+      try {
+        const res = await fetch('/compromisos/ia', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto: input.value.trim() })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al crear compromiso');
+
+        mostrarAlerta(`✅ Compromiso agregado: ${data.compromiso.nombre} (${formatoMoneda.format(data.compromiso.monto_cuota)}/mes)`);
+        input.value = '';
+        document.getElementById('panel-nuevo-compromiso').classList.add('hidden');
+        await cargarCompromisos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Agregar con IA';
+      }
+    }
+
+    async function crearCompromisoManual(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-comp-man');
+      btn.disabled = true;
+
+      const payload = {
+        nombre: document.getElementById('comp-nombre').value.trim(),
+        modalidad: document.getElementById('comp-modalidad').value,
+        categoria: document.getElementById('comp-categoria').value,
+        monto_cuota: parseInt(document.getElementById('comp-monto').value || '0', 10),
+        cuotas_totales: parseInt(document.getElementById('comp-cuotas').value || '0', 10)
+      };
+
+      try {
+        const res = await fetch('/compromisos/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al guardar compromiso');
+
+        mostrarAlerta(`✅ Compromiso guardado: ${payload.nombre}`);
+        document.getElementById('comp-nombre').value = '';
+        document.getElementById('comp-monto').value = '';
+        document.getElementById('panel-nuevo-compromiso').classList.add('hidden');
+        await cargarCompromisos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function pagarCompromiso(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Registrando...';
+
+      try {
+        const res = await fetch(`/compromisos/${id}/pagar`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al registrar pago');
+
+        mostrarAlerta(data.message);
+        await sincronizarTodo();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+        btn.disabled = false;
+        btn.textContent = '✓ Registrar pago';
+      }
+    }
+
+    async function cancelarCompromiso(id) {
+      if (!confirm('¿Deseas quitar este compromiso de la lista de pagos recurrentes?')) return;
+      try {
+        const res = await fetch(`/compromisos/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al eliminar');
+        mostrarAlerta('🗑️ ' + data.message);
+        await cargarCompromisos();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      }
+    }
+
+    // --- FUNCIONES DEL DASHBOARD Y MOVIMIENTOS ---
+
+    function cambiarTipoAnalisis(tipo) {
+      tipoAnalisisActual = tipo;
+      const btnTodos = document.getElementById('btn-vista-todos');
+      const btnEgreso = document.getElementById('btn-vista-egreso');
+      const btnIngreso = document.getElementById('btn-vista-ingreso');
+
+      const estiloInactivo = "px-4 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition";
+      btnTodos.className = estiloInactivo;
+      btnEgreso.className = estiloInactivo;
+      btnIngreso.className = estiloInactivo;
+
+      if (tipo === 'Todos') {
+        btnTodos.className = "px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm transition";
+      } else if (tipo === 'Egreso') {
+        btnEgreso.className = "px-4 py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm transition";
+      } else {
+        btnIngreso.className = "px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-sm transition";
+      }
+
+      document.getElementById('filtro-categoria-detalle').value = 'Todas';
+      actualizarDashboard();
     }
 
     function mostrarAlerta(mensaje, esError = false) {
       const alerta = document.getElementById('alerta');
       alerta.textContent = mensaje;
-      alerta.className = `mb-4 p-3.5 rounded-xl text-sm font-medium ${
-        esError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+      alerta.className = `p-4 rounded-xl text-sm font-medium shadow-sm ${
+        esError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
       }`;
       alerta.classList.remove('hidden');
-      setTimeout(() => alerta.classList.add('hidden'), 5000);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => alerta.classList.add('hidden'), 6000);
     }
 
     async function cargarDatos() {
       try {
         const res = await fetch('/movimientos');
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.detail || 'Error al cargar datos');
 
-        // Actualizar tarjetas
-        document.getElementById('card-ingresos').textContent = formatoMoneda.format(data.resumen.ingresos);
-        document.getElementById('card-egresos').textContent = formatoMoneda.format(data.resumen.egresos);
-        
-        const elBalance = document.getElementById('card-balance');
-        elBalance.textContent = formatoMoneda.format(data.resumen.balance);
-        elBalance.className = `text-3xl font-bold mt-2 ${data.resumen.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`;
+        todosLosMovimientos = data.movimientos || [];
+        poblarSelectorAnios();
+        actualizarDashboard();
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('Error sincronizando con Google Sheets: ' + err.message, true);
+      }
+    }
 
-        // Actualizar tabla
-        const tbody = document.getElementById('tabla-movimientos');
-        document.getElementById('contador-registros').textContent = `${data.movimientos.length} registros`;
+    async function sincronizarTodo() {
+      await Promise.all([cargarDatos(), cargarCompromisos()]);
+    }
 
-        if (data.movimientos.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">No hay movimientos registrados aún.</td></tr>';
-          return;
+    function poblarSelectorAnios() {
+      const selectAnio = document.getElementById('filtro-anio');
+      const valorPrevio = selectAnio.value;
+      const aniosUnicos = [...new Set(todosLosMovimientos.map(m => String(m.anio)).filter(Boolean))].sort().reverse();
+      
+      selectAnio.innerHTML = '<option value="Todos">Todos los años</option>' +
+        aniosUnicos.map(a => `<option value="${a}">${a}</option>`).join('');
+
+      if (aniosUnicos.includes(valorPrevio)) {
+        selectAnio.value = valorPrevio;
+      }
+    }
+
+    function obtenerMovimientosFiltradosPorFecha() {
+      const mesSel = document.getElementById('filtro-mes').value;
+      const anioSel = document.getElementById('filtro-anio').value;
+
+      document.getElementById('badge-periodo').textContent =
+        (mesSel === 'Todos' && anioSel === 'Todos') ? 'Histórico completo' : `${mesSel} ${anioSel !== 'Todos' ? anioSel : ''}`;
+
+      return todosLosMovimientos.filter(m => {
+        const coincideMes = mesSel === 'Todos' || m.mes.toLowerCase() === mesSel.toLowerCase();
+        const coincideAnio = anioSel === 'Todos' || String(m.anio) === anioSel;
+        return coincideMes && coincideAnio;
+      });
+    }
+
+    function actualizarDashboard() {
+      const filtrados = obtenerMovimientosFiltradosPorFecha();
+
+      const ingresos = filtrados.filter(m => m.tipo.toLowerCase() === 'ingreso');
+      const egresos = filtrados.filter(m => m.tipo.toLowerCase() === 'egreso');
+
+      const sumIngReal = ingresos.reduce((acc, m) => acc + m.monto, 0);
+      const sumIngPpto = ingresos.reduce((acc, m) => acc + m.presupuesto, 0);
+      const sumEgrReal = egresos.reduce((acc, m) => acc + m.monto, 0);
+      const sumEgrPpto = egresos.reduce((acc, m) => acc + m.presupuesto, 0);
+      const saldo = sumIngReal - sumEgrReal;
+
+      document.getElementById('card-ingresos').textContent = formatoMoneda.format(sumIngReal);
+      document.getElementById('ing-ppto').textContent = formatoMoneda.format(sumIngPpto);
+      document.getElementById('ing-dif').textContent = formatoMoneda.format(sumIngReal - sumIngPpto);
+
+      document.getElementById('card-egresos').textContent = formatoMoneda.format(sumEgrReal);
+      document.getElementById('egr-ppto').textContent = formatoMoneda.format(sumEgrPpto);
+      document.getElementById('egr-dif').textContent = formatoMoneda.format(sumEgrPpto - sumEgrReal);
+
+      const elBalance = document.getElementById('card-balance');
+      elBalance.textContent = formatoMoneda.format(saldo);
+      elBalance.className = `text-2xl font-bold mt-2 ${saldo >= 0 ? 'text-slate-900' : 'text-rose-600'}`;
+
+      const movsTipo = tipoAnalisisActual === 'Todos'
+        ? filtrados
+        : filtrados.filter(m => m.tipo.toLowerCase() === tipoAnalisisActual.toLowerCase());
+
+      const mapaCategorias = {};
+      movsTipo.forEach(m => {
+        const cat = m.categoria || 'Otros';
+        if (!mapaCategorias[cat]) {
+          mapaCategorias[cat] = { ppto: 0, real: 0 };
         }
+        mapaCategorias[cat].ppto += m.presupuesto;
+        mapaCategorias[cat].real += m.monto;
+      });
 
-        tbody.innerHTML = data.movimientos.map(m => {
-          const esIngreso = m.tipo.toLowerCase() === 'ingreso';
-          const badgeColor = esIngreso ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700';
-          const montoColor = esIngreso ? 'text-emerald-600 font-semibold' : 'text-slate-800 font-semibold';
-          const signo = esIngreso ? '+' : '-';
+      const categoriasOrdenadas = Object.keys(mapaCategorias).sort((a, b) => mapaCategorias[b].real - mapaCategorias[a].real);
+
+      const etiquetaVista = tipoAnalisisActual === 'Todos' ? 'Todos los Movimientos' : (tipoAnalisisActual === 'Egreso' ? 'Egresos' : 'Ingresos');
+      document.getElementById('titulo-tabla-resumen').textContent = `Resumen de ${etiquetaVista} por Categoría`;
+      document.getElementById('titulo-dona').textContent = `Distribución de ${etiquetaVista} (%)`;
+      document.getElementById('titulo-barras-ppto').textContent = `Presupuesto vs Real (${etiquetaVista})`;
+      document.getElementById('titulo-detalle').textContent = tipoAnalisisActual === 'Todos'
+        ? 'Historial Completo de Movimientos'
+        : `Detalle de ${etiquetaVista}`;
+
+      const tbodyResumen = document.getElementById('tabla-resumen-categorias');
+      const tfootResumen = document.getElementById('tfoot-resumen-categorias');
+
+      if (categoriasOrdenadas.length === 0) {
+        tbodyResumen.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">Sin registros en este periodo</td></tr>`;
+        tfootResumen.innerHTML = '';
+      } else {
+        let totalPpto = 0;
+        let totalReal = 0;
+
+        tbodyResumen.innerHTML = categoriasOrdenadas.map(cat => {
+          const { ppto, real } = mapaCategorias[cat];
+          totalPpto += ppto;
+          totalReal += real;
+          const dif = tipoAnalisisActual === 'Ingreso' ? (real - ppto) : (ppto - real);
 
           return `
-            <tr class="hover:bg-slate-50/80 transition">
-              <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${m.fecha}</td>
-              <td class="py-3 px-4">
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeColor}">${m.tipo}</span>
-              </td>
-              <td class="py-3 px-4 text-slate-700">${m.categoria}</td>
-              <td class="py-3 px-4 text-slate-800">${m.concepto}</td>
-              <td class="py-3 px-4 text-right whitespace-nowrap ${montoColor}">
-                ${signo}${formatoMoneda.format(m.monto)}
+            <tr onclick="filtrarPorCategoria('${cat}')" class="hover:bg-indigo-50/60 cursor-pointer transition">
+              <td class="py-2.5 px-4 font-medium text-slate-800">${cat}</td>
+              <td class="py-2.5 px-4 text-right text-slate-500">${formatoMoneda.format(ppto)}</td>
+              <td class="py-2.5 px-4 text-right font-semibold text-slate-900">${formatoMoneda.format(real)}</td>
+              <td class="py-2.5 px-4 text-right text-xs font-medium ${dif >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                ${formatoMoneda.format(dif)}
               </td>
             </tr>
           `;
         }).join('');
-      } catch (err) {
-        console.error(err);
-        mostrarAlerta('No se pudieron cargar los datos de Google Sheets: ' + err.message, true);
+
+        const totalDif = tipoAnalisisActual === 'Ingreso' ? (totalReal - totalPpto) : (totalPpto - totalReal);
+        tfootResumen.innerHTML = `
+          <tr>
+            <td class="py-2.5 px-4">Total ${etiquetaVista}</td>
+            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalPpto)}</td>
+            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalReal)}</td>
+            <td class="py-2.5 px-4 text-right">${formatoMoneda.format(totalDif)}</td>
+          </tr>
+        `;
       }
+
+      const selCatDetalle = document.getElementById('filtro-categoria-detalle');
+      const catActual = selCatDetalle.value;
+      selCatDetalle.innerHTML = '<option value="Todas">Todas las categorías</option>' +
+        categoriasOrdenadas.map(c => `<option value="${c}">${c}</option>`).join('');
+      if (categoriasOrdenadas.includes(catActual)) {
+        selCatDetalle.value = catActual;
+      }
+
+      renderizarDetalle();
+      renderizarGraficas(categoriasOrdenadas, mapaCategorias, filtrados);
+    }
+
+    function filtrarPorCategoria(categoria) {
+      const sel = document.getElementById('filtro-categoria-detalle');
+      sel.value = categoria;
+      renderizarDetalle();
+      document.getElementById('tabla-movimientos').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderizarDetalle() {
+      const filtrados = obtenerMovimientosFiltradosPorFecha();
+      const catSel = document.getElementById('filtro-categoria-detalle').value;
+
+      const movsDetalle = filtrados.filter(m => {
+        const coincideTipo = tipoAnalisisActual === 'Todos' || m.tipo.toLowerCase() === tipoAnalisisActual.toLowerCase();
+        const coincideCat = catSel === 'Todas' || m.categoria === catSel;
+        return coincideTipo && coincideCat;
+      });
+
+      document.getElementById('contador-registros').textContent = `${movsDetalle.length} registros`;
+      const tbody = document.getElementById('tabla-movimientos');
+
+      if (movsDetalle.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">No hay movimientos para los filtros seleccionados.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = movsDetalle.map(m => {
+        const esIngreso = m.tipo.toLowerCase() === 'ingreso';
+        const badgeTipoColor = esIngreso ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700';
+        const montoColor = esIngreso ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold';
+        const signo = esIngreso ? '+' : '-';
+
+        return `
+          <tr class="hover:bg-slate-50/80 transition">
+            <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${m.fecha}</td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeTipoColor}">${m.tipo}</span>
+            </td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">${m.categoria}</span>
+            </td>
+            <td class="py-3 px-4 text-slate-800">${m.concepto}</td>
+            <td class="py-3 px-4 text-right text-slate-500 whitespace-nowrap">${formatoMoneda.format(m.presupuesto)}</td>
+            <td class="py-3 px-4 text-right whitespace-nowrap ${montoColor}">${signo}${formatoMoneda.format(m.monto)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderizarGraficas(categorias, mapaCategorias, todosFiltrados) {
+      const valoresReal = categorias.map(c => mapaCategorias[c].real);
+      const valoresPpto = categorias.map(c => mapaCategorias[c].ppto);
+      const paleta = ['#4f46e5', '#10b981', '#f43f5e', '#f59e0b', '#06b6d4', '#8b5cf6', '#64748b', '#ec4899', '#14b8a6'];
+
+      if (chartDona) chartDona.destroy();
+      chartDona = new Chart(document.getElementById('chart-dona'), {
+        type: 'doughnut',
+        data: {
+          labels: categorias,
+          datasets: [{
+            data: valoresReal,
+            backgroundColor: paleta,
+            borderWidth: 2,
+            borderColor: '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } }
+          }
+        }
+      });
+
+      const colorReal = tipoAnalisisActual === 'Todos' ? '#4f46e5' : (tipoAnalisisActual === 'Egreso' ? '#e11d48' : '#059669');
+      if (chartPptoReal) chartPptoReal.destroy();
+      chartPptoReal = new Chart(document.getElementById('chart-ppto-real'), {
+        type: 'bar',
+        data: {
+          labels: categorias,
+          datasets: [
+            { label: 'Presupuesto', data: valoresPpto, backgroundColor: '#94a3b8', borderRadius: 6 },
+            { label: 'Real', data: valoresReal, backgroundColor: colorReal, borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+
+      const todasCats = [...new Set(todosFiltrados.map(m => m.categoria || 'Otros'))];
+      const ingPorCat = todasCats.map(c =>
+        todosFiltrados.filter(m => m.categoria === c && m.tipo.toLowerCase() === 'ingreso').reduce((s, m) => s + m.monto, 0)
+      );
+      const egrPorCat = todasCats.map(c =>
+        todosFiltrados.filter(m => m.categoria === c && m.tipo.toLowerCase() === 'egreso').reduce((s, m) => s + m.monto, 0)
+      );
+
+      if (chartBalanceCat) chartBalanceCat.destroy();
+      chartBalanceCat = new Chart(document.getElementById('chart-balance-categorias'), {
+        type: 'bar',
+        data: {
+          labels: todasCats,
+          datasets: [
+            { label: 'Ingresos', data: ingPorCat, backgroundColor: '#10b981', borderRadius: 6 },
+            { label: 'Egresos', data: egrPorCat, backgroundColor: '#f43f5e', borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
     }
 
     async function enviarIA(e) {
@@ -298,7 +958,7 @@
         tipo: document.getElementById('man-tipo').value,
         categoria: document.getElementById('man-categoria').value,
         concepto: document.getElementById('man-concepto').value.trim(),
-        monto: parseInt(document.getElementById('man-monto').value, 10),
+        monto: parseInt(document.getElementById('man-monto').value || '0', 10),
         presupuesto: parseInt(document.getElementById('man-presupuesto').value || '0', 10)
       };
 
@@ -314,6 +974,7 @@
         mostrarAlerta(`✅ Movimiento guardado: ${payload.concepto} por ${formatoMoneda.format(payload.monto)}`);
         document.getElementById('man-concepto').value = '';
         document.getElementById('man-monto').value = '';
+        document.getElementById('man-presupuesto').value = '0';
         await cargarDatos();
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
@@ -323,8 +984,7 @@
       }
     }
 
-    // Cargar datos al abrir la página
-    cargarDatos();
+    sincronizarTodo();
   </script>
 </body>
 </html>
