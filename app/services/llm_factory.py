@@ -1,108 +1,95 @@
+import os
 import json
-import re
-from typing import Optional, Dict
+import time
 from google import genai
 from google.genai import types
 from app.core.config import settings
 
+PROMPT_TRANSACCION = """
+Eres un asistente financiero experto en Colombia. Analiza la entrada (texto, audio o imagen de factura/comprobante de transferencia) y extrae la información de la transacción financiera en formato JSON estricto.
+
+Reglas:
+1. "tipo": Debe ser exactamente "Ingreso" o "Egreso". (Si es una factura de compra o transferencia enviada, es "Egreso". Si es dinero recibido o pago recibido, es "Ingreso").
+2. "categoria":
+   - Si "tipo" es "Egreso", elige exclusivamente una de: ["Comida", "Transporte", "Suscripciones", "Compras", "Servicios", "Ahorro", "Préstamo", "Deudas", "Otros"].
+   - Si "tipo" es "Ingreso", elige exclusivamente una de: ["Trabajo", "Préstamo", "Deudas", "Otros"].
+3. "concepto": Un resumen corto, claro y descriptivo (ej. "Mercado en D1", "Transferencia Nequi a Carlos", "Almuerzo", "Pago nómina"). Si es una factura de supermercado o tienda, incluye el nombre del comercio.
+4. "monto": Un número entero sin puntos, comas ni signos de moneda (ej. 45000). Si es una factura, toma el TOTAL PAGADO final (ignora subtotales, IVA desglosado o devuelta/cambio). Si en Colombia dicen "20 barras", "20 lukas" o "20 mil", es 20000.
+
+Responde ÚNICAMENTE con un objeto JSON válido:
+{"tipo": "...", "categoria": "...", "concepto": "...", "monto": 0}
+"""
+
+PROMPT_COMPROMISO = """
+Eres un asistente financiero. Analiza la entrada (texto o audio) donde el usuario describe un pago recurrente o una deuda a cuotas, y extrae la información en formato JSON estricto.
+
+Reglas:
+1. "nombre": Nombre corto del compromiso o deuda (ej. "Plan de Celular", "Crédito Banco", "Netflix", "Cultivo de Arroz").
+2. "modalidad":
+   - Usa "Cuotas" si menciona un número específico de cuotas, meses definidos o un plazo fijo para terminar de pagar.
+   - Usa "Recurrente" si es un pago mensual indefinido sin fecha de fin (como servicios, arriendo, suscripciones).
+3. "categoria": Elige exclusivamente una de: ["Deudas", "Servicios", "Suscripciones"].
+4. "monto_cuota": El valor entero de CADA cuota mensual (sin puntos ni signos). Nota: Si el usuario dice "debo 3 millones a 10 cuotas" y no da el valor de la cuota, calcula 3000000 / 10 = 300000. Si dice "8 cuotas de 465 mil", el monto_cuota es 465000.
+5. "cuotas_totales": Número entero de cuotas totales si modalidad es "Cuotas" (ej. 8). Si modalidad es "Recurrente", pon 0.
+
+Responde ÚNICAMENTE con un objeto JSON válido:
+{"nombre": "...", "modalidad": "...", "categoria": "...", "monto_cuota": 0, "cuotas_totales": 0}
+"""
+
 class LLMFactory:
     def __init__(self):
-        self.client = None
-        if settings.gemini_api_key:
-            self.client = genai.Client(
-                api_key=settings.gemini_api_key,
-                http_options=types.HttpOptions(timeout=15000)
-            )
-
-    def parsear_transaccion(self, texto: str) -> Optional[Dict]:
-        if not self.client:
-            raise ValueError("No hay un modelo de IA configurado. Verifica tus API Keys.")
-
-        categorias = [
-            'Trabajo', 'Comida', 'Transporte', 'Suscripciones', 
-            'Compras', 'Servicios', 'Deudas', 'Ahorro', 'Préstamo', 'Otros'
+        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.modelos = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash"
         ]
+
+    def _limpiar_json(self, raw_text: str) -> dict | None:
+        try:
+            texto_limpio = raw_text.strip()
+            if texto_limpio.startswith("```"):
+                lineas = texto_limpio.splitlines()
+                texto_limpio = "\n".join(lineas[1:-1]).strip()
+            return json.loads(texto_limpio)
+        except Exception as e:
+            print(f"Error parseando JSON de Gemini: {e} | Respuesta cruda: {raw_text}")
+            return None
+
+    def _generar_con_respaldo(self, contenidos: list) -> dict | None:
+        ultimo_error = None
+        for modelo in self.modelos:
+            try:
+                response = self.client.models.generate_content(
+                    model=modelo,
+                    contents=contenidos,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                    ),
+                )
+                return self._limpiar_json(response.text)
+            except Exception as e:
+                print(f"⚠️ Fallo con {modelo}: {e}. Probando siguiente modelo de respaldo...")
+                ultimo_error = e
+                time.sleep(0.5)
         
-        prompt = f'''
-        Eres un asistente financiero personal. Analiza este mensaje en español:
+        raise RuntimeError(f"Todos los modelos de Gemini están ocupados en este momento. Detalle: {ultimo_error}")
 
-        "{texto}"
+    def parsear_transaccion(self, texto: str) -> dict | None:
+        return self._generar_con_respaldo([PROMPT_TRANSACCION, f"Texto del usuario: {texto}"])
 
-        Reglas de clasificación (muy importante):
-        - 'Préstamo' y 'Deudas' pueden aparecer tanto en Ingreso como en Egreso:
-            * Si la persona RECIBE un préstamo (ej: "me prestaron", "me prestó") -> tipo="Ingreso", categoria="Préstamo".
-            * Si la persona PAGA una deuda o cuota (ej: "pagué la cuota", "aboné deuda") -> tipo="Egreso", categoria="Deudas".
-            * Si la persona PRESTA dinero a alguien (ej: "le presté") -> tipo="Egreso", categoria="Préstamo".
-            * Si la persona RECIBE devolución de un préstamo que había hecho -> tipo="Ingreso", categoria="Deudas".
-        - Para el resto de casos, clasifica con precisión:
-            * Ingreso: "Trabajo" (sueldos, honorarios, ventas) o "Otros" (regalos, bonos, reembolsos).
-            * Egreso:
-                - "Comida": restaurantes, café, pan, mercado, domicilios de comida, almuerzos.
-                - "Transporte": pasajes, bus, taxi, Uber, gasolina, peajes.
-                - "Suscripciones": Spotify, Netflix, Disney+, gimnasio, apps mensuales, membresías.
-                - "Compras": ropa, artículos del hogar, tecnología, Dollar City, compras varias.
-                - "Servicios": luz, agua, gas, internet, plan de celular, arriendo.
-                - "Ahorro": dinero guardado, inversiones, CDT, bolsillo de ahorro.
-                - "Otros": cualquier egreso que no encaje en los anteriores.
+    def parsear_transaccion_multimodal(self, file_bytes: bytes, mime_type: str, nota_extra: str = "") -> dict | None:
+        part_archivo = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+        contenidos = [PROMPT_TRANSACCION, part_archivo]
+        if nota_extra.strip():
+            contenidos.append(f"Nota adicional del usuario: {nota_extra.strip()}")
+        return self._generar_con_respaldo(contenidos)
 
-        Devuelve SOLO un JSON con estos campos:
-        - tipo: "Ingreso" o "Egreso"
-        - categoria: una de {categorias}
-        - concepto: resumen muy corto (<= 4 palabras)
-        - monto: número entero en pesos (sin símbolos)
-        '''
+    def parsear_compromiso(self, texto: str) -> dict | None:
+        return self._generar_con_respaldo([PROMPT_COMPROMISO, f"Texto del usuario: {texto}"])
 
-        try:
-            resp = self.client.models.generate_content(
-                model='gemini-flash-lite-latest',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            m = re.search(r'\{.*\}', resp.text.strip(), re.S)
-            return json.loads(m.group()) if m else None
-        except Exception as e:
-            print(f"Error procesando con IA: {e}")
-            return None
-
-    def parsear_compromiso(self, texto: str) -> Optional[Dict]:
-        if not self.client:
-            raise ValueError("No hay un modelo de IA configurado.")
-
-        prompt = f'''
-        Analiza esta descripción de un pago recurrente o deuda a cuotas en español:
-        "{texto}"
-
-        Reglas:
-        1. modalidad:
-           - Usa "Cuotas" si menciona un monto total a pagar, un préstamo o un número definido de cuotas/meses (ej: "debo 2 millones en cuotas de 500 mil", "10 cuotas de 100 mil").
-           - Usa "Recurrente" si es un pago fijo mensual sin fecha de fin (ej: "plan de celular 50 mil todos los meses", "internet 80 mil mensual", "Spotify").
-        2. categoria: elige entre ["Deudas", "Servicios", "Suscripciones"].
-           - Préstamos, tarjetas o deudas personales -> "Deudas".
-           - Celular, internet, luz, agua, arriendo -> "Servicios".
-           - Plataformas digitales, gimnasio, membresías -> "Suscripciones".
-        3. monto_cuota: valor entero de cada pago mensual en pesos.
-        4. cuotas_totales:
-           - Si modalidad es "Recurrente", devuelve 0.
-           - Si modalidad es "Cuotas", calcula o extrae el número entero de cuotas (ej: si debe 2.000.000 y paga 500.000 al mes, cuotas_totales = 4).
-        5. nombre: nombre corto y claro del compromiso (<= 4 palabras, ej: "Plan de Celular", "Préstamo Banco").
-
-        Devuelve SOLO un JSON con: nombre, modalidad, categoria, monto_cuota, cuotas_totales.
-        '''
-
-        try:
-            resp = self.client.models.generate_content(
-                model='gemini-flash-lite-latest',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            m = re.search(r'\{.*\}', resp.text.strip(), re.S)
-            return json.loads(m.group()) if m else None
-        except Exception as e:
-            print(f"Error parseando compromiso con IA: {e}")
-            return None
+    def parsear_compromiso_multimodal(self, file_bytes: bytes, mime_type: str) -> dict | None:
+        part_audio = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+        return self._generar_con_respaldo([PROMPT_COMPROMISO, part_audio])
 
 llm_factory = LLMFactory()

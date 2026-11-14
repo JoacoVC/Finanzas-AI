@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -7,7 +7,7 @@ from datetime import datetime
 from app.services.sheets_client import sheets_client
 from app.services.llm_factory import llm_factory
 
-app = FastAPI(title="Finanzas AI Backend", version="1.3.0")
+app = FastAPI(title="Finanzas AI Backend", version="1.5.0")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -90,6 +90,38 @@ def registrar_transaccion(req: MensajeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/registrar-transaccion-media", tags=["Transacciones"])
+async def registrar_transaccion_media(
+    archivo: UploadFile = File(...),
+    nota: str = Form(default="")
+):
+    try:
+        contenido = await archivo.read()
+        if not contenido:
+            raise HTTPException(status_code=400, detail="El archivo recibido está vacío.")
+
+        mime_type = archivo.content_type or "image/jpeg"
+        info = llm_factory.parsear_transaccion_multimodal(contenido, mime_type, nota)
+        if not info:
+            raise HTTPException(status_code=400, detail="La IA no pudo extraer datos del archivo.")
+
+        tipo = info.get("tipo", "Egreso")
+        categoria = info.get("categoria", "Otros")
+        concepto = info.get("concepto", "Movimiento multimedia")
+        monto = int(info.get("monto", 0))
+
+        ahora = datetime.now()
+        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
+        registro_id = sheets_client.append_record(fila)
+
+        return {
+            "status": "success",
+            "message": "Movimiento extraído y guardado exitosamente",
+            "data": {"id": registro_id, "fila_insertada": fila}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/registrar-manual", tags=["Transacciones"])
 def registrar_manual(req: TransaccionManualRequest):
     try:
@@ -149,6 +181,29 @@ def crear_compromiso_ia(req: MensajeRequest):
         if not info:
             raise HTTPException(status_code=400, detail="La IA no pudo interpretar el compromiso.")
         
+        creado = sheets_client.crear_compromiso(
+            nombre=info.get("nombre", "Compromiso"),
+            modalidad=info.get("modalidad", "Recurrente"),
+            categoria=info.get("categoria", "Deudas"),
+            monto_cuota=int(info.get("monto_cuota", 0)),
+            cuotas_totales=int(info.get("cuotas_totales", 0))
+        )
+        return {"status": "success", "compromiso": creado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/compromisos/ia-audio", tags=["Compromisos"])
+async def crear_compromiso_ia_audio(audio: UploadFile = File(...)):
+    try:
+        contenido = await audio.read()
+        if not contenido:
+            raise HTTPException(status_code=400, detail="El audio recibido está vacío.")
+
+        mime_type = audio.content_type or "audio/webm"
+        info = llm_factory.parsear_compromiso_multimodal(contenido, mime_type)
+        if not info:
+            raise HTTPException(status_code=400, detail="La IA no pudo interpretar el audio del compromiso.")
+
         creado = sheets_client.crear_compromiso(
             nombre=info.get("nombre", "Compromiso"),
             modalidad=info.get("modalidad", "Recurrente"),

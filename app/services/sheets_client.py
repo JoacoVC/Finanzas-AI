@@ -70,7 +70,6 @@ class SheetsClient:
                 except ValueError:
                     return 0
 
-            # Si una fila antigua no tenía ID en columna I, le asignamos uno temporal basado en su fila
             rec_id = fila[8].strip() if len(fila) > 8 and fila[8].strip() else f"row_{idx}"
 
             registros.append({
@@ -98,7 +97,6 @@ class SheetsClient:
     def update_record(self, record_id: str, updated_data: list):
         objetivo = self._buscar_fila_transaccion(record_id)
         row_idx = objetivo["row_index"]
-        # Conservamos el ID real (o generamos uno si era una fila antigua sin ID)
         final_id = record_id if not record_id.startswith("row_") else str(uuid.uuid4())[:8]
         fila_completa = updated_data + [final_id]
         self.sheet.update(f"A{row_idx}:I{row_idx}", [fila_completa], value_input_option="USER_ENTERED")
@@ -115,12 +113,12 @@ class SheetsClient:
         fila = [
             comp_id,
             nombre,
-            modalidad,       # "Recurrente" o "Cuotas"
-            categoria,       # "Deudas", "Servicios", "Suscripciones"
+            modalidad,
+            categoria,
             monto_cuota,
-            cuotas_totales,  # 0 si es recurrente indefinido
-            0,               # CuotasPagadas inicia en 0
-            "",              # UltimoMesPagado
+            cuotas_totales,
+            0,
+            "",
             "Activo"
         ]
         ws.append_row(fila, value_input_option="USER_ENTERED")
@@ -171,7 +169,6 @@ class SheetsClient:
         cuotas_pag = min(cuotas_pagadas, cuotas_tot) if modalidad == "Cuotas" else cuotas_pagadas
         estado = "Finalizado" if (modalidad == "Cuotas" and cuotas_tot > 0 and cuotas_pag >= cuotas_tot) else "Activo"
 
-        # Actualiza columnas B(Nombre) hasta G(CuotasPagadas) e I(Estado)
         ws.update(
             f"B{row_idx}:I{row_idx}",
             [[nombre, modalidad, categoria, monto_cuota, cuotas_tot, cuotas_pag, objetivo["ultimo_mes_pagado"], estado]],
@@ -210,7 +207,7 @@ class SheetsClient:
         if not objetivo:
             raise ValueError("Compromiso no encontrado o ya finalizado.")
         if objetivo["modalidad"] != "Cuotas" or objetivo["cuotas_totales"] <= 0:
-            raise ValueError("Solo se pueden liquidar deudas que tienen un número de cuotas definido.")
+            raise ValueError("Solo se pueden liquidar deudas con un número de cuotas definido.")
 
         cuotas_restantes = max(1, objetivo["cuotas_totales"] - objetivo["cuotas_pagadas"])
         monto_liquidacion = cuotas_restantes * objetivo["monto_cuota"]
