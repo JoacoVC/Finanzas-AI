@@ -381,12 +381,12 @@
 
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
         <div class="flex justify-between items-center">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Saldo del Periodo</p>
-          <span id="badge-periodo" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">Histórico</span>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Saldo Disponible Total</p>
+          <span id="badge-periodo" class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">Cuentas + Flujo</span>
         </div>
         <p id="card-balance" class="text-2xl font-bold text-slate-900 mt-2">$0</p>
-        <p class="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
-          Ingresos menos Egresos filtrados
+        <p id="subtitulo-balance" class="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+          Flujo del periodo: $0
         </p>
       </div>
     </section>
@@ -1648,7 +1648,12 @@
       const sumIngPpto = ingresos.reduce((acc, m) => acc + m.presupuesto, 0);
       const sumEgrReal = egresos.reduce((acc, m) => acc + m.monto, 0);
       const sumEgrPpto = egresos.reduce((acc, m) => acc + m.presupuesto, 0);
-      const saldo = sumIngReal - sumEgrReal;
+      const flujoPeriodo = sumIngReal - sumEgrReal;
+
+      // Suma el saldo actual de tus cuentas (Efectivo y Banco, excluyendo Tarjetas de Crédito porque son cupo/deuda)
+      const saldoCuentasLiquidas = todasLasCuentas
+        .filter(c => c.tipo !== 'Tarjeta')
+        .reduce((acc, c) => acc + c.saldo, 0);
 
       document.getElementById('card-ingresos').textContent = formatoMoneda.format(sumIngReal);
       document.getElementById('ing-ppto').textContent = formatoMoneda.format(sumIngPpto);
@@ -1659,8 +1664,12 @@
       document.getElementById('egr-dif').textContent = formatoMoneda.format(sumEgrPpto - sumEgrReal);
 
       const elBalance = document.getElementById('card-balance');
-      elBalance.textContent = formatoMoneda.format(saldo);
-      elBalance.className = `text-2xl font-bold mt-2 ${saldo >= 0 ? 'text-slate-900' : 'text-rose-600'}`;
+      elBalance.textContent = formatoMoneda.format(saldoCuentasLiquidas);
+      elBalance.className = `text-2xl font-bold mt-2 ${saldoCuentasLiquidas >= 0 ? 'text-slate-900' : 'text-rose-600'}`;
+
+      const signoFlujo = flujoPeriodo >= 0 ? '+' : '';
+      document.getElementById('subtitulo-balance').textContent =
+        `Flujo del periodo: ${signoFlujo}${formatoMoneda.format(flujoPeriodo)}`;
 
       const movsTipo = tipoAnalisisActual === 'Todos'
         ? filtrados
