@@ -86,8 +86,8 @@
               type="file"
               id="input-foto-factura"
               accept="image/*"
-              capture="environment"
-              onchange="procesarImagenSeleccionada(event)"
+              multiple
+              onchange="procesarImagenesSeleccionadas(event)"
               class="hidden"
             />
 
@@ -96,11 +96,11 @@
                 type="button"
                 id="btn-foto-ia"
                 onclick="document.getElementById('input-foto-factura').click()"
-                title="Subir foto de factura o comprobante"
+                title="Subir una o varias fotos de facturas o comprobantes"
                 class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap"
               >
                 <span>📷</span>
-                <span>Factura / Foto</span>
+                <span>Factura(s) / Foto(s)</span>
               </button>
 
               <button
@@ -795,9 +795,18 @@
               </div>
               ${detalleHTML}
             </div>
-            <div class="mt-3 pt-2 border-t border-slate-200 flex justify-end gap-1.5">
-              <button onclick="abrirModalEditarCta('${c.id}')" title="Editar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600">✏️</button>
-              <button onclick="eliminarCuenta('${c.id}', '${c.nombre}')" title="Eliminar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600">🗑️</button>
+            <div class="mt-3 pt-2 border-t border-slate-200 flex justify-between items-center gap-1.5">
+              <div>
+                ${esTarjeta && c.saldo > 0 ? `
+                  <button onclick="pagarSaldoTarjetaTotal('${c.id}', '${c.nombre}', ${c.saldo}, this)" class="text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2.5 py-1 rounded-lg transition">
+                    ⚡ Saldar a $0
+                  </button>
+                ` : ''}
+              </div>
+              <div class="flex gap-1.5">
+                <button onclick="abrirModalEditarCta('${c.id}')" title="Editar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600">✏️</button>
+                <button onclick="eliminarCuenta('${c.id}', '${c.nombre}')" title="Eliminar cuenta" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600">🗑️</button>
+              </div>
             </div>
           </div>
         `;
@@ -997,8 +1006,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error procesando audio');
 
-        const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Audio registrado (${data.data.cuenta}): ${fila[3]} — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(data.message || '✅ Movimiento(s) por voz registrados exitosamente.');
         document.getElementById('texto-ia').value = '';
         await sincronizarTodo();
       } catch (err) {
@@ -1057,31 +1065,34 @@
       });
     }
 
-    async function procesarImagenSeleccionada(event) {
-      const archivo = event.target.files[0];
-      if (!archivo) return;
+    async function procesarImagenesSeleccionadas(event) {
+      const archivos = Array.from(event.target.files);
+      if (!archivos.length) return;
 
       const banner = document.getElementById('estado-media-ia');
       const msg = document.getElementById('mensaje-media-ia');
       const btnFoto = document.getElementById('btn-foto-ia');
 
       banner.classList.remove('hidden');
-      msg.textContent = "📷 Leyendo factura / comprobante con Gemini...";
+      msg.textContent = archivos.length === 1
+        ? "📷 Leyendo factura / comprobante con Gemini..."
+        : `📷 Comprimiendo y procesando ${archivos.length} fotos simultáneamente con Gemini...`;
       btnFoto.disabled = true;
 
       try {
-        const imagenOptimizada = await comprimirImagen(archivo);
         const formData = new FormData();
-        formData.append('archivo', imagenOptimizada, 'comprobante.jpg');
+        for (let i = 0; i < archivos.length; i++) {
+          const optimizada = await comprimirImagen(archivos[i]);
+          formData.append('archivos', optimizada, `comprobante_${i + 1}.jpg`);
+        }
         formData.append('nota', document.getElementById('texto-ia').value.trim());
         formData.append('cuenta', document.getElementById('ia-cuenta').value);
 
         const res = await fetch('/registrar-transaccion-media', { method: 'POST', body: formData });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Error leyendo la imagen');
+        if (!res.ok) throw new Error(data.detail || 'Error leyendo los comprobantes');
 
-        const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Comprobante registrado (${data.data.cuenta}): "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(data.message || '✅ Comprobante(s) registrado(s) exitosamente.');
         document.getElementById('texto-ia').value = '';
         await sincronizarTodo();
       } catch (err) {
@@ -1189,18 +1200,82 @@
           .filter(c => c.flujo === 'Ingreso' && !c.pagado_este_mes)
           .reduce((s, c) => s + c.monto_cuota, 0);
 
-        document.getElementById('badge-resumen-comp').textContent = `${todosLosCompromisos.length} activos`;
-        document.getElementById('subtitulo-resumen-comp').textContent =
-          `Pendiente este mes → Pagos: ${formatoMoneda.format(totalEgresosMes)} · Ingresos fijos: ${formatoMoneda.format(totalIngresosMes)}`;
+        const tarjetasCredito = todasLasCuentas.filter(c => c.tipo === 'Tarjeta');
+        const totalDeudaTarjetas = tarjetasCredito.reduce((s, c) => s + c.saldo, 0);
 
-        if (todosLosCompromisos.length === 0) {
-          contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full py-2">No tienes compromisos activos. Agrega uno arriba.</p>';
-          return;
+        document.getElementById('badge-resumen-comp').textContent = `${todosLosCompromisos.length} compromisos` + (tarjetasCredito.length ? ` · ${tarjetasCredito.length} tarjetas` : '');
+        document.getElementById('subtitulo-resumen-comp').textContent =
+          `Pendiente este mes → Cuotas/fijos: ${formatoMoneda.format(totalEgresosMes)} · Ingresos: ${formatoMoneda.format(totalIngresosMes)}` +
+          (totalDeudaTarjetas > 0 ? ` · Deuda en Tarjetas: ${formatoMoneda.format(totalDeudaTarjetas)}` : '');
+
+        const opcionesCuentasLiquidasHTML = todasLasCuentas
+          .filter(cta => cta.tipo !== 'Tarjeta')
+          .map(cta => `<option value="${cta.nombre}">${cta.nombre} (${formatoMoneda.format(cta.saldo)})</option>`)
+          .join('') || '<option value="Efectivo">Efectivo</option>';
+
+        let tarjetasHTML = '';
+        if (tarjetasCredito.length > 0) {
+          tarjetasHTML = tarjetasCredito.map(t => {
+            const tieneDeuda = t.saldo > 0;
+            const pctUso = t.cupo_total > 0 ? Math.min(100, Math.round((t.saldo / t.cupo_total) * 100)) : 0;
+            return `
+              <div class="border border-purple-200 bg-purple-50/40 rounded-xl p-4 flex flex-col justify-between hover:bg-white transition shadow-sm">
+                <div>
+                  <div class="flex justify-between items-start gap-2">
+                    <div>
+                      <span class="text-[10px] font-bold uppercase tracking-wider text-purple-700">💳 DEUDA TARJETA DE CRÉDITO</span>
+                      <h3 class="font-bold text-slate-900 text-sm mt-0.5">${t.nombre}</h3>
+                    </div>
+                    <span class="text-[11px] font-semibold ${tieneDeuda ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'} px-2 py-0.5 rounded-full">
+                      ${tieneDeuda ? 'Saldo pendiente' : 'Al día ($0)'}
+                    </span>
+                  </div>
+
+                  <div class="mt-3 space-y-1">
+                    <p class="text-xs text-slate-500">Deuda actual (cupo usado):</p>
+                    <p class="text-xl font-extrabold ${tieneDeuda ? 'text-rose-600' : 'text-slate-700'}">${formatoMoneda.format(t.saldo)}</p>
+                    <div class="flex justify-between text-[11px] text-slate-500 pt-1">
+                      <span>Cupo libre: ${formatoMoneda.format(t.cupo_disponible)}</span>
+                      <span>Total: ${formatoMoneda.format(t.cupo_total)}</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1">
+                      <div class="bg-purple-600 h-1.5 rounded-full" style="width: ${pctUso}%"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-purple-100 space-y-2">
+                  ${tieneDeuda ? `
+                    <div class="flex items-center gap-1.5">
+                      <label class="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Pagar con:</label>
+                      <select id="cta-pago-tc-${t.id}" class="w-full text-xs rounded-lg border border-slate-300 py-1 px-2 bg-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+                        ${opcionesCuentasLiquidasHTML}
+                      </select>
+                    </div>
+                    <div class="flex gap-2">
+                      <button
+                        onclick="pagarSaldoTarjetaTotal('${t.id}', '${t.nombre}', ${t.saldo}, this)"
+                        class="flex-1 bg-purple-700 hover:bg-purple-800 text-white font-semibold py-2 px-2.5 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        ⚡ Liquidar a $0
+                      </button>
+                      <button
+                        onclick="abonarTarjetaModal('${t.id}', '${t.nombre}', ${t.saldo})"
+                        class="bg-white hover:bg-purple-50 text-purple-700 border border-purple-300 font-semibold py-2 px-3 rounded-lg text-xs transition"
+                      >
+                        Abonar
+                      </button>
+                    </div>
+                  ` : `
+                    <p class="text-[11px] text-emerald-600 font-medium text-center py-1">✓ ¡Tarjeta completamente al día!</p>
+                  `}
+                </div>
+              </div>
+            `;
+          }).join('');
         }
 
-        const opcionesCuentasHTML = todasLasCuentas.map(cta => `<option value="${cta.nombre}">${cta.nombre}</option>`).join('') || '<option value="Efectivo">Efectivo</option>';
-
-        contenedor.innerHTML = todosLosCompromisos.map(c => {
+        const compromisosHTML = todosLosCompromisos.map(c => {
           const esIngreso = (c.flujo || 'Egreso') === 'Ingreso';
           const esCuotas = c.modalidad === 'Cuotas';
           const progresoPct = esCuotas && c.cuotas_totales > 0
@@ -1274,7 +1349,7 @@
               <div class="mt-4 pt-3 border-t border-slate-200 space-y-2">
                 <div class="flex items-center gap-1.5">
                   <select id="cta-comp-${c.id}" class="text-xs border border-slate-300 rounded-lg px-2 py-2 bg-white text-slate-700 max-w-[115px]">
-                    ${opcionesCuentasHTML}
+                    ${opcionesCuentasLiquidasHTML}
                   </select>
                   <button
                     onclick="pagarCompromiso('${c.id}', this)"
@@ -1303,6 +1378,12 @@
             </div>
           `;
         }).join('');
+
+        if (!tarjetasHTML && !compromisosHTML) {
+          contenedor.innerHTML = '<p class="text-sm text-slate-400 col-span-full py-2">No tienes compromisos ni deudas activas.</p>';
+        } else {
+          contenedor.innerHTML = tarjetasHTML + compromisosHTML;
+        }
       } catch (err) {
         console.error(err);
       }
@@ -1407,6 +1488,65 @@
       } catch (err) {
         mostrarAlerta('❌ ' + err.message, true);
         btn.disabled = false;
+      }
+    }
+
+    async function pagarSaldoTarjetaTotal(id, nombre, saldo, btn) {
+      const selectCta = document.getElementById(`cta-pago-tc-${id}`);
+      const cuentaOrigen = selectCta ? selectCta.value : 'Efectivo';
+      if (!confirm(`¿Confirmas liquidar la totalidad de la tarjeta "${nombre}" por ${formatoMoneda.format(saldo)} pagando desde ${cuentaOrigen}? Su deuda quedará en $0.`)) return;
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Liquidando...';
+      }
+
+      try {
+        const res = await fetch(`/cuentas/${id}/pagar-tarjeta`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuenta_origen: cuentaOrigen, es_total: true, monto: saldo })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al liquidar tarjeta');
+
+        mostrarAlerta(data.message || `✅ Tarjeta ${nombre} saldada a $0 exitosamente.`);
+        await sincronizarTodo();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '⚡ Liquidar a $0';
+        }
+      }
+    }
+
+    async function abonarTarjetaModal(id, nombre, saldoActual) {
+      const selectCta = document.getElementById(`cta-pago-tc-${id}`);
+      const cuentaOrigen = selectCta ? selectCta.value : 'Efectivo';
+      const valorStr = prompt(`¿Cuánto deseas abonar a la tarjeta "${nombre}" desde ${cuentaOrigen}? (Deuda actual: ${formatoMoneda.format(saldoActual)})`);
+      if (!valorStr) return;
+
+      const monto = parseInt(valorStr.replace(/\D/g, ''), 10);
+      if (!monto || monto <= 0) {
+        mostrarAlerta('❌ Ingresa un valor numérico válido para el abono.', true);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/cuentas/${id}/pagar-tarjeta`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuenta_origen: cuentaOrigen, es_total: false, monto })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error al abonar a la tarjeta');
+
+        mostrarAlerta(data.message || `✅ Abono de ${formatoMoneda.format(monto)} a ${nombre} registrado.`);
+        await sincronizarTodo();
+      } catch (err) {
+        mostrarAlerta('❌ ' + err.message, true);
       }
     }
 
@@ -1626,13 +1766,13 @@
 
     function mostrarAlerta(mensaje, esError = false) {
       const alerta = document.getElementById('alerta');
-      alerta.textContent = mensaje;
-      alerta.className = `p-4 rounded-xl text-sm font-medium shadow-sm ${
+      alerta.innerHTML = String(mensaje).replace(/\n/g, '<br/>');
+      alerta.className = `p-4 rounded-xl text-sm font-medium shadow-sm whitespace-pre-line leading-relaxed ${
         esError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
       }`;
       alerta.classList.remove('hidden');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      setTimeout(() => alerta.classList.add('hidden'), 6000);
+      setTimeout(() => alerta.classList.add('hidden'), 8000);
     }
 
     async function cargarDatos() {
@@ -1963,8 +2103,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error al registrar');
 
-        const fila = data.data.fila_insertada;
-        mostrarAlerta(`✅ Registrado (${data.data.cuenta}): ${fila[3]} (${fila[4]}) — "${fila[5]}" por ${formatoMoneda.format(fila[7])}`);
+        mostrarAlerta(data.message || '✅ Operación procesada exitosamente.');
         input.value = '';
         await sincronizarTodo();
       } catch (err) {

@@ -45,6 +45,11 @@ class CuentaRequest(BaseModel):
 class PagoCompromisoRequest(BaseModel):
     cuenta: str = "Efectivo"
 
+class PagoTarjetaDirectoRequest(BaseModel):
+    cuenta_origen: str = "Efectivo"
+    monto: int = 0
+    es_total: bool = True
+
 def mes_espanol(mes_num: int) -> str:
     meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
              "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -54,16 +59,80 @@ def validar_respuesta_ia(info: dict | None, es_transaccion: bool = True):
     if not info or info.get("valido") is False:
         raise HTTPException(
             status_code=400,
-            detail="No se detectó voz o información financiera clara. Intenta hablar más cerca del micrófono."
+            detail="No se detectó audio comprensible ni información financiera clara. Intenta hablar más cerca del micrófono o detallar el gasto."
         )
     if es_transaccion:
-        monto = int(info.get("monto", 0))
-        concepto = str(info.get("concepto", "")).lower()
-        if monto <= 0 or "no disponible" in concepto:
+        operaciones = info.get("operaciones", [])
+        if not operaciones:
             raise HTTPException(
                 status_code=400,
-                detail="No se detectó un monto válido o el audio estaba vacío. No se guardó ningún registro."
+                detail="No se detectó un monto válido o la instrucción no contiene movimientos claros."
             )
+
+def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_disponibles: list[str] = None) -> dict:
+    accion = op.get("accion", "transaccion")
+    
+    if accion == "pago_tarjeta":
+        tarjeta = op.get("tarjeta", "")
+        cuenta_origen = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta_origen", "Efectivo")
+        monto = int(op.get("monto", 0))
+        es_total = bool(op.get("es_total", False))
+        resultado = sheets_client.pagar_tarjeta(
+            nombre_tarjeta=tarjeta,
+            cuenta_origen=cuenta_origen,
+            monto=monto,
+            es_total=es_total
+        )
+        return {
+            "accion": "pago_tarjeta",
+            "detalle": resultado,
+            "mensaje": resultado.get("mensaje", f"Pago de tarjeta {tarjeta} aplicado.")
+        }
+
+    elif accion == "transferencia":
+        origen = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta_origen", "Efectivo")
+        destino = op.get("cuenta_destino", "Efectivo")
+        monto = int(op.get("monto", 0))
+        concepto = op.get("concepto", "")
+        resultado = sheets_client.transferir_entre_cuentas(
+            cuenta_origen=origen,
+            cuenta_destino=destino,
+            monto=monto,
+            concepto=concepto
+        )
+        return {
+            "accion": "transferencia",
+            "detalle": resultado,
+            "mensaje": resultado.get("mensaje", f"Transferencia de ${monto:,} de {origen} a {destino} realizada.".replace(",", "."))
+        }
+
+    else:
+        # Transacción común (Ingreso o Egreso)
+        tipo = op.get("tipo", "Egreso")
+        categoria = op.get("categoria", "Otros")
+        concepto = op.get("concepto", "Movimiento")
+        monto = int(op.get("monto", 0))
+        
+        cuenta = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta", "Efectivo")
+        if cuentas_disponibles and cuenta not in cuentas_disponibles:
+            cuenta_match = next((c for c in cuentas_disponibles if c.lower() == cuenta.lower()), None)
+            cuenta = cuenta_match if cuenta_match else (cuentas_disponibles[0] if cuentas_disponibles else "Efectivo")
+
+        ahora = datetime.now()
+        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
+        registro_id = sheets_client.append_record(fila, cuenta=cuenta)
+        
+        signo = "+" if tipo.lower() == "ingreso" else "-"
+        msg = f"{'🟢' if tipo.lower() == 'ingreso' else '🔴'} {tipo} ({cuenta}): {concepto} por {signo}${monto:,} [{categoria}]".replace(",", ".")
+        return {
+            "accion": "transaccion",
+            "id": registro_id,
+            "fila_insertada": fila,
+            "cuenta": cuenta,
+            "monto": monto,
+            "tipo": tipo,
+            "mensaje": msg
+        }
 
 @app.get("/", tags=["Frontend"])
 def servir_frontend():
@@ -106,6 +175,34 @@ def eliminar_cuenta(cuenta_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/cuentas/{cuenta_id}/pagar-tarjeta", tags=["Cuentas"])
+def pagar_tarjeta_directo(cuenta_id: str, req: PagoTarjetaDirectoRequest = PagoTarjetaDirectoRequest()):
+    try:
+        cuentas = sheets_client.listar_cuentas()
+        tarjeta = next((c for c in cuentas if c["id"] == cuenta_id), None)
+        if not tarjeta:
+            raise HTTPException(status_code=404, detail="Tarjeta no encontrada.")
+        
+        resultado = sheets_client.pagar_tarjeta(
+            nombre_tarjeta=tarjeta["nombre"],
+            cuenta_origen=req.cuenta_origen,
+            monto=req.monto,
+            es_total=req.es_total
+        )
+        return {"status": "success", "data": resultado, "message": resultado.get("mensaje")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/deudas-resumen", tags=["Compromisos"])
+def obtener_resumen_deudas():
+    try:
+        resumen = sheets_client.obtener_resumen_deudas()
+        return {"status": "success", "data": resumen}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- ENDPOINTS DE TRANSACCIONES ---
 
 @app.get("/movimientos", tags=["Transacciones"])
@@ -131,26 +228,33 @@ def obtener_movimientos():
 @app.post("/registrar-transaccion", tags=["Transacciones"])
 def registrar_transaccion(req: MensajeRequest):
     try:
+        contexto = sheets_client.obtener_contexto_financiero()
         cuentas = [c["nombre"] for c in sheets_client.listar_cuentas()]
-        info = llm_factory.parsear_transaccion(req.texto, cuentas)
+        info = llm_factory.parsear_operaciones(req.texto, contexto)
         validar_respuesta_ia(info, es_transaccion=True)
         
-        tipo = info.get("tipo", "Egreso")
-        categoria = info.get("categoria", "Otros")
-        concepto = info.get("concepto", "")
-        monto = int(info.get("monto", 0))
-        cuenta = req.cuenta.strip() if req.cuenta.strip() else info.get("cuenta", "Efectivo")
-        if cuenta not in cuentas and cuentas:
-            cuenta = cuentas[0]
+        operaciones = info.get("operaciones", [])
+        ejecutadas = []
+        for op in operaciones:
+            res = ejecutar_operacion_financiera(op, cuenta_override=req.cuenta, cuentas_disponibles=cuentas)
+            ejecutadas.append(res)
 
-        ahora = datetime.now()
-        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
-        registro_id = sheets_client.append_record(fila, cuenta=cuenta)
+        resumen_texto = info.get("resumen", "")
+        if len(ejecutadas) == 1:
+            mensaje_final = ejecutadas[0]["mensaje"]
+        else:
+            lineas = [f"✅ {resumen_texto or f'{len(ejecutadas)} operaciones procesadas'}:"]
+            for ej in ejecutadas:
+                lineas.append(f"• {ej['mensaje']}")
+            mensaje_final = "\n".join(lineas)
 
         return {
             "status": "success",
-            "message": "Transacción registrada con IA exitosamente",
-            "data": {"id": registro_id, "fila_insertada": fila, "cuenta": cuenta}
+            "message": mensaje_final,
+            "data": {
+                "resumen": resumen_texto,
+                "operaciones": ejecutadas
+            }
         }
     except HTTPException:
         raise
@@ -159,36 +263,63 @@ def registrar_transaccion(req: MensajeRequest):
 
 @app.post("/registrar-transaccion-media", tags=["Transacciones"])
 async def registrar_transaccion_media(
-    archivo: UploadFile = File(...),
+    archivo: UploadFile | None = File(None),
+    archivos: list[UploadFile] | None = File(None),
     nota: str = Form(default=""),
     cuenta: str = Form(default="")
 ):
     try:
-        contenido = await archivo.read()
-        if not contenido or len(contenido) < 800:
-            raise HTTPException(status_code=400, detail="El archivo o audio está vacío o es demasiado corto.")
+        lista_archivos_raw = []
+        if archivos:
+            lista_archivos_raw.extend(archivos)
+        if archivo:
+            lista_archivos_raw.append(archivo)
 
+        if not lista_archivos_raw:
+            raise HTTPException(status_code=400, detail="No se recibió ningún archivo o audio para procesar.")
+
+        archivos_bytes = []
+        for arch in lista_archivos_raw:
+            contenido = await arch.read()
+            if contenido and len(contenido) >= 200:
+                mime_type = arch.content_type or "image/jpeg"
+                archivos_bytes.append((contenido, mime_type))
+
+        if not archivos_bytes:
+            raise HTTPException(status_code=400, detail="El archivo o audio recibido está vacío o es demasiado corto.")
+
+        contexto = sheets_client.obtener_contexto_financiero()
         cuentas = [c["nombre"] for c in sheets_client.listar_cuentas()]
-        mime_type = archivo.content_type or "image/jpeg"
-        info = llm_factory.parsear_transaccion_multimodal(contenido, mime_type, nota, cuentas)
+        
+        info = llm_factory.parsear_operaciones_multimodal(
+            archivos=archivos_bytes,
+            nota_extra=nota,
+            contexto_financiero=contexto
+        )
         validar_respuesta_ia(info, es_transaccion=True)
 
-        tipo = info.get("tipo", "Egreso")
-        categoria = info.get("categoria", "Otros")
-        concepto = info.get("concepto", "Movimiento multimedia")
-        monto = int(info.get("monto", 0))
-        cuenta_final = cuenta.strip() if cuenta.strip() else info.get("cuenta", "Efectivo")
-        if cuenta_final not in cuentas and cuentas:
-            cuenta_final = cuentas[0]
+        operaciones = info.get("operaciones", [])
+        ejecutadas = []
+        for op in operaciones:
+            res = ejecutar_operacion_financiera(op, cuenta_override=cuenta, cuentas_disponibles=cuentas)
+            ejecutadas.append(res)
 
-        ahora = datetime.now()
-        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
-        registro_id = sheets_client.append_record(fila, cuenta=cuenta_final)
+        resumen_texto = info.get("resumen", "")
+        if len(ejecutadas) == 1:
+            mensaje_final = ejecutadas[0]["mensaje"]
+        else:
+            lineas = [f"✅ {resumen_texto or f'{len(ejecutadas)} operaciones procesadas'}:"]
+            for ej in ejecutadas:
+                lineas.append(f"• {ej['mensaje']}")
+            mensaje_final = "\n".join(lineas)
 
         return {
             "status": "success",
-            "message": "Movimiento extraído y guardado exitosamente",
-            "data": {"id": registro_id, "fila_insertada": fila, "cuenta": cuenta_final}
+            "message": mensaje_final,
+            "data": {
+                "resumen": resumen_texto,
+                "operaciones": ejecutadas
+            }
         }
     except HTTPException:
         raise

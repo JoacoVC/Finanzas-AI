@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 from app.core.config import settings
@@ -129,6 +130,214 @@ class SheetsClient:
             nuevo_saldo = (obj["saldo"] + monto) if es_ingreso else (obj["saldo"] - monto)
 
         ws.update(f"D{obj['row_index']}", [[nuevo_saldo]], value_input_option="USER_ENTERED")
+
+    def pagar_tarjeta(self, nombre_tarjeta: str, cuenta_origen: str, monto: int = 0, es_total: bool = False, concepto: str = "") -> dict:
+        if self.sheet is None:
+            self.connect()
+        ws = self._get_cuentas_sheet()
+        cuentas = self.listar_cuentas()
+
+        # Buscar tarjeta (coincidencia exacta o parcial)
+        tarjeta = next((c for c in cuentas if c["nombre"].lower() == nombre_tarjeta.lower() and c["tipo"] == "Tarjeta"), None)
+        if not tarjeta:
+            tarjeta = next((c for c in cuentas if nombre_tarjeta.lower() in c["nombre"].lower() and c["tipo"] == "Tarjeta"), None)
+        if not tarjeta:
+            tarjeta = next((c for c in cuentas if c["nombre"].lower() == nombre_tarjeta.lower()), None)
+
+        if not tarjeta:
+            tarjetas_disponibles = [c["nombre"] for c in cuentas if c["tipo"] == "Tarjeta"]
+            raise ValueError(f"No se encontró la tarjeta '{nombre_tarjeta}'. Disponibles: {', '.join(tarjetas_disponibles) if tarjetas_disponibles else 'Ninguna'}")
+
+        # Buscar cuenta de origen
+        cuenta_src = None
+        if cuenta_origen:
+            cuenta_src = next((c for c in cuentas if c["nombre"].lower() == cuenta_origen.lower() and c["tipo"] != "Tarjeta"), None)
+            if not cuenta_src:
+                cuenta_src = next((c for c in cuentas if cuenta_origen.lower() in c["nombre"].lower() and c["tipo"] != "Tarjeta"), None)
+        
+        if not cuenta_src:
+            # Seleccionar por defecto primera cuenta líquida o Efectivo
+            cuenta_src = next((c for c in cuentas if c["tipo"] != "Tarjeta"), None)
+
+        nombre_src = cuenta_src["nombre"] if cuenta_src else "Efectivo"
+        saldo_deuda_actual = tarjeta["saldo"]
+
+        if es_total or monto <= 0:
+            monto_pago = saldo_deuda_actual
+        else:
+            monto_pago = min(monto, saldo_deuda_actual) if saldo_deuda_actual > 0 else monto
+
+        if monto_pago <= 0 and saldo_deuda_actual == 0:
+            return {
+                "tarjeta": tarjeta["nombre"],
+                "cuenta_origen": nombre_src,
+                "monto_pagado": 0,
+                "saldo_restante_tarjeta": 0,
+                "mensaje": f"La tarjeta {tarjeta['nombre']} ya tiene saldo en cero ($0 deuda)."
+            }
+
+        nuevo_saldo_tarjeta = max(0, saldo_deuda_actual - monto_pago)
+        ws.update(f"D{tarjeta['row_index']}", [[nuevo_saldo_tarjeta]], value_input_option="USER_ENTERED")
+
+        if cuenta_src:
+            nuevo_saldo_src = cuenta_src["saldo"] - monto_pago
+            ws.update(f"D{cuenta_src['row_index']}", [[nuevo_saldo_src]], value_input_option="USER_ENTERED")
+
+        # Registrar transacción de pago en la hoja de movimientos
+        ahora = datetime.now()
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        
+        es_liquidacion = (es_total or nuevo_saldo_tarjeta == 0)
+        concepto_final = concepto.strip() if concepto.strip() else (
+            f"Pago total tarjeta {tarjeta['nombre']} con {nombre_src}" if es_liquidacion
+            else f"Abono tarjeta {tarjeta['nombre']} con {nombre_src}"
+        )
+
+        record_id = str(uuid.uuid4())[:8]
+        fila = [
+            ahora.strftime("%d/%m/%Y"),
+            meses[ahora.month - 1],
+            ahora.year,
+            "Egreso",
+            "Deudas",
+            concepto_final,
+            monto_pago,
+            monto_pago,
+            record_id,
+            nombre_src
+        ]
+        self.sheet.append_row(fila, value_input_option="USER_ENTERED")
+
+        msg = (
+            f"💳 Pago total completado: Se saldó la tarjeta {tarjeta['nombre']} (${monto_pago:,} COP) y su deuda quedó en $0. Descontado de {nombre_src}."
+            if es_liquidacion
+            else f"💳 Abono completado: Se pagaron ${monto_pago:,} COP a la tarjeta {tarjeta['nombre']}. Deuda restante: ${nuevo_saldo_tarjeta:,} COP. Descontado de {nombre_src}."
+        ).replace(",", ".")
+
+        return {
+            "tarjeta": tarjeta["nombre"],
+            "cuenta_origen": nombre_src,
+            "monto_pagado": monto_pago,
+            "saldo_restante_tarjeta": nuevo_saldo_tarjeta,
+            "record_id": record_id,
+            "concepto": concepto_final,
+            "mensaje": msg
+        }
+
+    def transferir_entre_cuentas(self, cuenta_origen: str, cuenta_destino: str, monto: int, concepto: str = "") -> dict:
+        if self.sheet is None:
+            self.connect()
+        ws = self._get_cuentas_sheet()
+        cuentas = self.listar_cuentas()
+
+        src = next((c for c in cuentas if c["nombre"].lower() == cuenta_origen.lower()), None)
+        dst = next((c for c in cuentas if c["nombre"].lower() == cuenta_destino.lower()), None)
+
+        if not src or not dst:
+            raise ValueError(f"Cuentas para transferencia no válidas ({cuenta_origen} -> {cuenta_destino}).")
+
+        # Descontar de origen
+        if src["tipo"] == "Tarjeta":
+            nuevo_src = src["saldo"] + monto
+        else:
+            nuevo_src = src["saldo"] - monto
+        ws.update(f"D{src['row_index']}", [[nuevo_src]], value_input_option="USER_ENTERED")
+
+        # Sumar a destino
+        if dst["tipo"] == "Tarjeta":
+            nuevo_dst = max(0, dst["saldo"] - monto)
+        else:
+            nuevo_dst = dst["saldo"] + monto
+        ws.update(f"D{dst['row_index']}", [[nuevo_dst]], value_input_option="USER_ENTERED")
+
+        ahora = datetime.now()
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        concepto_final = concepto.strip() or f"Transferencia de {src['nombre']} a {dst['nombre']}"
+        record_id = str(uuid.uuid4())[:8]
+        fila = [
+            ahora.strftime("%d/%m/%Y"),
+            meses[ahora.month - 1],
+            ahora.year,
+            "Egreso",
+            "Otros",
+            concepto_final,
+            monto,
+            monto,
+            record_id,
+            src["nombre"]
+        ]
+        self.sheet.append_row(fila, value_input_option="USER_ENTERED")
+
+        return {
+            "origen": src["nombre"],
+            "destino": dst["nombre"],
+            "monto": monto,
+            "mensaje": f"🔁 Transferencia realizada: ${monto:,} COP de {src['nombre']} a {dst['nombre']}.".replace(",", ".")
+        }
+
+    def obtener_contexto_financiero(self) -> str:
+        cuentas = self.listar_cuentas()
+        compromisos = self.listar_compromisos_activos()
+        
+        lineas = ["ESTADO FINANCIERO Y CUENTAS DISPONIBLES:"]
+        
+        liquidas = [c for c in cuentas if c["tipo"] != "Tarjeta"]
+        if liquidas:
+            lineas.append("- Cuentas de dinero disponible / efectivo:")
+            for c in liquidas:
+                lineas.append(f"  * {c['nombre']} ({c['tipo']}): Saldo disponible ${c['saldo']:,} COP".replace(",", "."))
+        else:
+            lineas.append("- Cuentas de dinero disponible: Efectivo ($0)")
+
+        tarjetas = [c for c in cuentas if c["tipo"] == "Tarjeta"]
+        if tarjetas:
+            lineas.append("- Tarjetas de Crédito (Deudas / Cupo usado):")
+            for t in tarjetas:
+                lineas.append(
+                    f"  * {t['nombre']}: Deuda actual (saldo usado) = ${t['saldo']:,} COP | Cupo disponible = ${t['cupo_disponible']:,} COP | Cupo total = ${t['cupo_total']:,} COP".replace(",", ".")
+                )
+        else:
+            lineas.append("- Tarjetas de crédito registradas: Ninguna.")
+
+        if compromisos:
+            lineas.append("- Deudas a cuotas y pagos recurrentes activos:")
+            for comp in compromisos:
+                flujo = comp.get("flujo", "Egreso")
+                if comp.get("modalidad") == "Cuotas":
+                    restantes = max(0, comp["cuotas_totales"] - comp["cuotas_pagadas"])
+                    saldo_deuda = restantes * comp["monto_cuota"]
+                    lineas.append(
+                        f"  * {comp['nombre']} (Deuda a Cuotas): Cuota mensual ${comp['monto_cuota']:,} COP ({comp['cuotas_pagadas']}/{comp['cuotas_totales']} pagadas, deuda restante ${saldo_deuda:,} COP)".replace(",", ".")
+                    )
+                else:
+                    lineas.append(
+                        f"  * {comp['nombre']} ({flujo} Recurrente): ${comp['monto_cuota']:,} COP (Día {comp.get('dia_pago', 1)} del mes)".replace(",", ".")
+                    )
+        
+        return "\n".join(lineas)
+
+    def obtener_resumen_deudas(self) -> dict:
+        cuentas = self.listar_cuentas()
+        compromisos = self.listar_compromisos_activos()
+        
+        tarjetas = [c for c in cuentas if c["tipo"] == "Tarjeta"]
+        total_deuda_tarjetas = sum(t["saldo"] for t in tarjetas)
+        
+        deudas_cuotas = [c for c in compromisos if c.get("modalidad") == "Cuotas" and (c.get("flujo") or "Egreso") == "Egreso"]
+        total_deuda_cuotas = sum(
+            max(0, c["cuotas_totales"] - c["cuotas_pagadas"]) * c["monto_cuota"]
+            for c in deudas_cuotas
+        )
+
+        return {
+            "total_deuda_global": total_deuda_tarjetas + total_deuda_cuotas,
+            "total_deuda_tarjetas": total_deuda_tarjetas,
+            "total_deuda_cuotas": total_deuda_cuotas,
+            "tarjetas": tarjetas,
+            "deudas_cuotas": deudas_cuotas
+        }
 
     # --- HOJA DE COMPROMISOS (DEUDAS, PAGOS E INGRESOS RECURRENTES) ---
 

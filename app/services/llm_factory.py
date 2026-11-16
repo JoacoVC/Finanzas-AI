@@ -4,21 +4,72 @@ from google import genai
 from google.genai import types
 from app.core.config import settings
 
-PROMPT_TRANSACCION = """
-Eres un asistente financiero experto en Colombia. Analiza la entrada (texto, audio o imagen de factura/comprobante) y extrae la transacción en JSON estricto.
+PROMPT_FINANCIERO_MULTIMODAL = """
+Eres un asistente de finanzas personales altamente inteligente, ágil y experto en Colombia.
+Tu tarea es analizar la entrada del usuario (que puede ser texto libre, una nota de voz, una o múltiples fotos de comprobantes/facturas, o una combinación de ellos), teniendo en cuenta el contexto financiero actual del usuario (cuentas bancarias, efectivo, tarjetas de crédito, cupos y deudas).
 
-Reglas:
-1. "valido": Si la entrada es un audio vacío, silencio, ruido sin palabras claras o no contiene ninguna intención financiera ni monto identificable, devuelve "valido": false y "monto": 0. De lo contrario, "valido": true.
-2. "tipo": Debe ser exactamente "Ingreso" o "Egreso".
-3. "categoria":
-   - Si "tipo" es "Egreso", elige exclusivamente una de: ["Comida", "Transporte", "Suscripciones", "Compras", "Servicios", "Ahorro", "Préstamo", "Deudas", "Otros"].
-   - Si "tipo" es "Ingreso", elige exclusivamente una de: ["Trabajo", "Préstamo", "Deudas", "Otros"].
-4. "concepto": Resumen corto y claro (ej. "Mercado en D1", "Almuerzo", "Pago nómina"). NUNCA pongas "transcripción no disponible".
-5. "monto": Número entero sin puntos ni signos (ej. 45000). En Colombia "20 barras", "20 lukas" o "20 mil" = 20000.
-6. "cuenta": Si el usuario menciona cómo pagó o recibió el dinero, identifícalo comparando con las cuentas disponibles entregadas en el contexto (ej. "Rappicard", "Nu", "Bancolombia", "Nequi", "Efectivo"). Si no menciona ninguna, devuelve "Efectivo".
+Debes identificar TODAS las intenciones y movimientos financieros y devolver una lista estructurada de operaciones en formato JSON estricto.
 
-Responde ÚNICAMENTE con un objeto JSON válido:
-{"valido": true, "tipo": "Egreso", "categoria": "Comida", "concepto": "...", "monto": 0, "cuenta": "Efectivo"}
+### Tipos de Operaciones Soportadas:
+1. "transaccion": Un gasto (Egreso) o entrada de dinero (Ingreso).
+   - "tipo": "Ingreso" o "Egreso".
+   - "categoria":
+     * Si "tipo" es "Egreso": una de ["Comida", "Transporte", "Suscripciones", "Compras", "Servicios", "Ahorro", "Préstamo", "Deudas", "Otros"].
+     * Si "tipo" es "Ingreso": una de ["Trabajo", "Préstamo", "Deudas", "Otros"].
+   - "concepto": Resumen corto, conciso y claro (ej. "Almuerzo corriente", "Entrega domicilios", "Gasolina", "Mercado D1", "Compra en Éxito"). NUNCA pongas "transcripción no disponible".
+   - "monto": Número entero positivo en pesos colombianos, sin puntos ni signos (ej. 25000).
+     En Colombia: "25 lucas", "25 barras", "25 mil" o "25k" = 25000; "500 mil" = 500000; "1 millón" o "1m" = 1000000.
+   - "cuenta": Nombre exacto de la cuenta o tarjeta utilizada según las cuentas disponibles en el contexto (ej. "Rappicard", "Bancolombia", "Efectivo", "Nequi"). Si no se menciona o no se deduce con claridad, usa "Efectivo".
+
+2. "pago_tarjeta": Pago total o abono parcial a una tarjeta de crédito.
+   - "tarjeta": Nombre exacto de la tarjeta de crédito a pagar (ej. "Rappicard").
+   - "cuenta_origen": Nombre de la cuenta de dinero con que se paga (ej. "Bancolombia", "Efectivo", "Nequi"). Si no se especifica, usa "Efectivo".
+   - "es_total": boolean.
+     * true: Si el usuario dice "pagué el saldo de la tarjeta", "pagué toda la tarjeta", "pagué la tarjeta completa", "liquidé la tarjeta", "dejé la tarjeta en cero". El sistema tomará la deuda viva actual de la tarjeta y la dejará en $0.
+     * false: Si el usuario da un monto específico para abonar (ej. "pagué 500.000 de la tarjeta").
+   - "monto": Entero positivo del abono si es_total es false. Si es_total es true, pon 0 (el backend usará el saldo total adeudado).
+
+3. "transferencia": Movimiento de fondos entre dos cuentas propias.
+   - "cuenta_origen": Cuenta desde donde sale el dinero.
+   - "cuenta_destino": Cuenta a donde entra el dinero.
+   - "monto": Entero positivo.
+   - "concepto": Breve descripción (ej. "Traslado de Bancolombia a Nequi").
+
+4. "pago_compromiso": Pago de una cuota o liquidación de un compromiso recurrente o deuda registrada.
+   - "nombre_compromiso": Nombre del compromiso activo según el contexto (ej. "Préstamo Moto", "Netflix", "Plan Celular").
+   - "cuenta_origen": Cuenta con que se paga.
+   - "es_liquidacion": boolean (true si liquida el total de cuotas pendientes).
+   - "monto": Entero positivo de la cuota o 0 si toma el valor configurado.
+
+### Reglas Críticas:
+1. MULTI-MOVIMIENTO: Si el usuario menciona varios movimientos en un solo mensaje o audio (ejemplo: "me acabo de hacer 25.000 pesos en unos domicilios, pero me gasté 5.000 en una Coca-Cola"), o si se adjuntan varias fotos de recibos, debes extraer y agregar CADA MOVIMIENTO INDIVIDUAL en la lista "operaciones".
+2. VALIDEZ: Si la entrada es un audio vacío, silencio absoluto, ruido incomprensible o no contiene ningún dato o intención financiera ("hola qué tal"), devuelve "valido": false y "operaciones": [].
+3. MONTO: En transacciones normales, el monto DEBE ser mayor a 0.
+4. RESUMEN: Una frase breve y humana que explique qué se procesará (ej. "Registrados 1 ingreso ($25.000) y 1 egreso ($5.000)" o "Pago de saldo total de Rappicard desde Bancolombia").
+
+### Formato de Respuesta JSON (Únicamente este objeto JSON sin bloques extras):
+{
+  "valido": true,
+  "resumen": "Resumen amigable de las operaciones",
+  "operaciones": [
+    {
+      "accion": "transaccion",
+      "tipo": "Ingreso",
+      "categoria": "Trabajo",
+      "concepto": "Domicilios",
+      "monto": 25000,
+      "cuenta": "Efectivo"
+    },
+    {
+      "accion": "transaccion",
+      "tipo": "Egreso",
+      "categoria": "Comida",
+      "concepto": "Coca-Cola",
+      "monto": 5000,
+      "cuenta": "Efectivo"
+    }
+  ]
+}
 """
 
 PROMPT_COMPROMISO = """
@@ -47,7 +98,8 @@ class LLMFactory:
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.modelos = [
             "gemini-3.5-flash-lite",
-            "gemini-3.8-flash"
+            "gemini-3.8-flash",
+            "gemini-2.5-flash"
         ]
 
     def _limpiar_json(self, raw_text: str) -> dict | None:
@@ -55,7 +107,11 @@ class LLMFactory:
             texto_limpio = raw_text.strip()
             if texto_limpio.startswith("```"):
                 lineas = texto_limpio.splitlines()
-                texto_limpio = "\n".join(lineas[1:-1]).strip()
+                if lineas[0].startswith("```"):
+                    lineas = lineas[1:]
+                if lineas and lineas[-1].startswith("```"):
+                    lineas = lineas[:-1]
+                texto_limpio = "\n".join(lineas).strip()
             return json.loads(texto_limpio)
         except Exception as e:
             print(f"Error parseando JSON de Gemini: {e} | Respuesta cruda: {raw_text}")
@@ -77,21 +133,68 @@ class LLMFactory:
             except Exception as e:
                 print(f"⚠️ Fallo con {modelo}: {e}. Probando siguiente modelo...")
                 ultimo_error = e
-                time.sleep(0.5)
+                time.sleep(0.4)
         
-        raise RuntimeError(f"Todos los modelos de Gemini están ocupados. Detalle: {ultimo_error}")
+        raise RuntimeError(f"Todos los modelos de Gemini están ocupados o con límite temporal. Detalle: {ultimo_error}")
 
+    def parsear_operaciones(self, texto: str, contexto_financiero: str = "") -> dict | None:
+        contenidos = [PROMPT_FINANCIERO_MULTIMODAL]
+        if contexto_financiero.strip():
+            contenidos.append(contexto_financiero.strip())
+        contenidos.append(f"Entrada del usuario: {texto}")
+        return self._generar_con_respaldo(contenidos)
+
+    def parsear_operaciones_multimodal(
+        self,
+        archivos: list[tuple[bytes, str]],
+        nota_extra: str = "",
+        contexto_financiero: str = ""
+    ) -> dict | None:
+        contenidos = [PROMPT_FINANCIERO_MULTIMODAL]
+        if contexto_financiero.strip():
+            contenidos.append(contexto_financiero.strip())
+        
+        for file_bytes, mime_type in archivos:
+            part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+            contenidos.append(part)
+
+        if nota_extra.strip():
+            contenidos.append(f"Nota o instrucción adicional del usuario: {nota_extra.strip()}")
+            
+        return self._generar_con_respaldo(contenidos)
+
+    # Métodos compatibles anteriores para no romper nada
     def parsear_transaccion(self, texto: str, cuentas_disponibles: list[str] = None) -> dict | None:
-        ctx_cuentas = f"Cuentas/tarjetas disponibles del usuario: {', '.join(cuentas_disponibles or ['Efectivo'])}"
-        return self._generar_con_respaldo([PROMPT_TRANSACCION, ctx_cuentas, f"Texto del usuario: {texto}"])
+        ctx = f"Cuentas disponibles: {', '.join(cuentas_disponibles or ['Efectivo'])}"
+        res = self.parsear_operaciones(texto, ctx)
+        if res and res.get("operaciones"):
+            primera = res["operaciones"][0]
+            return {
+                "valido": res.get("valido", True),
+                "tipo": primera.get("tipo", "Egreso"),
+                "categoria": primera.get("categoria", "Otros"),
+                "concepto": primera.get("concepto", ""),
+                "monto": primera.get("monto", 0),
+                "cuenta": primera.get("cuenta", "Efectivo"),
+                "operaciones": res["operaciones"]
+            }
+        return res
 
     def parsear_transaccion_multimodal(self, file_bytes: bytes, mime_type: str, nota_extra: str = "", cuentas_disponibles: list[str] = None) -> dict | None:
-        part_archivo = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-        ctx_cuentas = f"Cuentas/tarjetas disponibles del usuario: {', '.join(cuentas_disponibles or ['Efectivo'])}"
-        contenidos = [PROMPT_TRANSACCION, ctx_cuentas, part_archivo]
-        if nota_extra.strip():
-            contenidos.append(f"Nota adicional del usuario: {nota_extra.strip()}")
-        return self._generar_con_respaldo(contenidos)
+        ctx = f"Cuentas disponibles: {', '.join(cuentas_disponibles or ['Efectivo'])}"
+        res = self.parsear_operaciones_multimodal([(file_bytes, mime_type)], nota_extra, ctx)
+        if res and res.get("operaciones"):
+            primera = res["operaciones"][0]
+            return {
+                "valido": res.get("valido", True),
+                "tipo": primera.get("tipo", "Egreso"),
+                "categoria": primera.get("categoria", "Otros"),
+                "concepto": primera.get("concepto", ""),
+                "monto": primera.get("monto", 0),
+                "cuenta": primera.get("cuenta", "Efectivo"),
+                "operaciones": res["operaciones"]
+            }
+        return res
 
     def parsear_compromiso(self, texto: str) -> dict | None:
         return self._generar_con_respaldo([PROMPT_COMPROMISO, f"Texto del usuario: {texto}"])
