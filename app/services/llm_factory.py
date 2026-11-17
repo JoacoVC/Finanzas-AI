@@ -165,39 +165,6 @@ class LLMFactory:
             
         return self._generar_con_respaldo(contenidos)
 
-    # Métodos compatibles anteriores para no romper nada
-    def parsear_transaccion(self, texto: str, cuentas_disponibles: list[str] = None) -> dict | None:
-        ctx = f"Cuentas disponibles: {', '.join(cuentas_disponibles or ['Efectivo'])}"
-        res = self.parsear_operaciones(texto, ctx)
-        if res and res.get("operaciones"):
-            primera = res["operaciones"][0]
-            return {
-                "valido": res.get("valido", True),
-                "tipo": primera.get("tipo", "Egreso"),
-                "categoria": primera.get("categoria", "Otros"),
-                "concepto": primera.get("concepto", ""),
-                "monto": primera.get("monto", 0),
-                "cuenta": primera.get("cuenta", "Efectivo"),
-                "operaciones": res["operaciones"]
-            }
-        return res
-
-    def parsear_transaccion_multimodal(self, file_bytes: bytes, mime_type: str, nota_extra: str = "", cuentas_disponibles: list[str] = None) -> dict | None:
-        ctx = f"Cuentas disponibles: {', '.join(cuentas_disponibles or ['Efectivo'])}"
-        res = self.parsear_operaciones_multimodal([(file_bytes, mime_type)], nota_extra, ctx)
-        if res and res.get("operaciones"):
-            primera = res["operaciones"][0]
-            return {
-                "valido": res.get("valido", True),
-                "tipo": primera.get("tipo", "Egreso"),
-                "categoria": primera.get("categoria", "Otros"),
-                "concepto": primera.get("concepto", ""),
-                "monto": primera.get("monto", 0),
-                "cuenta": primera.get("cuenta", "Efectivo"),
-                "operaciones": res["operaciones"]
-            }
-        return res
-
     def parsear_compromiso(self, texto: str) -> dict | None:
         return self._generar_con_respaldo([PROMPT_COMPROMISO, f"Texto del usuario: {texto}"])
 

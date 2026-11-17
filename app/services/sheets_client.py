@@ -72,6 +72,30 @@ class SheetsClient:
 
     # --- HOJA DE CUENTAS Y TARJETAS DE CRÉDITO ---
 
+    def _asegurar_conexion(self):
+        self._asegurar_conexion()
+
+    def _buscar_cuenta(self, nombre: str, tipo: Optional[str] = None, liquida: bool = False, parcial: bool = False) -> Optional[dict]:
+        """
+        Busca una cuenta por nombre sin distinguir mayúsculas.
+        - tipo: exige ese tipo exacto ("Tarjeta", "Banco", ...).
+        - liquida=True: solo cuentas líquidas (excluye tarjetas).
+        - parcial=True: acepta coincidencia parcial (el nombre contiene el texto).
+        """
+        objetivo = (nombre or "").strip().lower()
+        if not objetivo:
+            return None
+
+        def coincide(c: dict) -> bool:
+            if tipo and c["tipo"] != tipo:
+                return False
+            if liquida and c["tipo"] == "Tarjeta":
+                return False
+            nombre_c = c["nombre"].lower()
+            return objetivo in nombre_c if parcial else objetivo == nombre_c
+
+        return next((c for c in self.listar_cuentas() if coincide(c)), None)
+
     def _get_cuentas_sheet(self):
         if self.spreadsheet is None:
             self.connect()
@@ -151,8 +175,7 @@ class SheetsClient:
         if not nombre_cuenta or monto <= 0:
             return
         ws = self._get_cuentas_sheet()
-        cuentas = self.listar_cuentas()
-        obj = next((c for c in cuentas if c["nombre"].lower() == nombre_cuenta.lower()), None)
+        obj = self._buscar_cuenta(nombre_cuenta)
         if not obj:
             return
 
@@ -172,13 +195,11 @@ class SheetsClient:
         Resta monto de cuenta origen y suma monto a cuenta destino.
         NO es ingreso ni egreso (tipo = 'Traslado').
         """
-        if self.sheet is None:
-            self.connect()
+        self._asegurar_conexion()
         ws = self._get_cuentas_sheet()
-        cuentas = self.listar_cuentas()
 
-        src = next((c for c in cuentas if c["nombre"].lower() == cuenta_origen.lower()), None)
-        dst = next((c for c in cuentas if c["nombre"].lower() == cuenta_destino.lower()), None)
+        src = self._buscar_cuenta(cuenta_origen)
+        dst = self._buscar_cuenta(cuenta_destino)
 
         if not src or not dst:
             raise ValueError(f"Cuentas no válidas para traslado ({cuenta_origen} -> {cuenta_destino}).")
@@ -240,30 +261,23 @@ class SheetsClient:
         Resta saldo de la cuenta líquida de origen y reduce la deuda viva de la tarjeta.
         Registra un movimiento de tipo 'Egreso' en la categoría 'Deudas'.
         """
-        if self.sheet is None:
-            self.connect()
+        self._asegurar_conexion()
         ws = self._get_cuentas_sheet()
-        cuentas = self.listar_cuentas()
 
-        tarjeta = next((c for c in cuentas if c["nombre"].lower() == nombre_tarjeta.lower() and c["tipo"] == "Tarjeta"), None)
+        tarjeta = (self._buscar_cuenta(nombre_tarjeta, tipo="Tarjeta")
+                   or self._buscar_cuenta(nombre_tarjeta, tipo="Tarjeta", parcial=True)
+                   or self._buscar_cuenta(nombre_tarjeta))
         if not tarjeta:
-            tarjeta = next((c for c in cuentas if nombre_tarjeta.lower() in c["nombre"].lower() and c["tipo"] == "Tarjeta"), None)
-        if not tarjeta:
-            tarjeta = next((c for c in cuentas if c["nombre"].lower() == nombre_tarjeta.lower()), None)
-
-        if not tarjeta:
-            tarjetas_disp = [c["nombre"] for c in cuentas if c["tipo"] == "Tarjeta"]
+            tarjetas_disp = [c["nombre"] for c in self.listar_cuentas() if c["tipo"] == "Tarjeta"]
             raise ValueError(f"No se encontró la tarjeta '{nombre_tarjeta}'. Disponibles: {', '.join(tarjetas_disp) if tarjetas_disp else 'Ninguna'}")
 
         # Buscar cuenta de origen (líquida)
-        cuenta_src = None
-        if cuenta_origen:
-            cuenta_src = next((c for c in cuentas if c["nombre"].lower() == cuenta_origen.lower() and c["tipo"] != "Tarjeta"), None)
-            if not cuenta_src:
-                cuenta_src = next((c for c in cuentas if cuenta_origen.lower() in c["nombre"].lower() and c["tipo"] != "Tarjeta"), None)
+        cuenta_src = self._buscar_cuenta(cuenta_origen, liquida=True) if cuenta_origen else None
+        if not cuenta_src:
+            cuenta_src = self._buscar_cuenta(cuenta_origen, liquida=True, parcial=True)
 
         if not cuenta_src:
-            cuenta_src = next((c for c in cuentas if c["tipo"] != "Tarjeta"), None)
+            cuenta_src = next((c for c in self.listar_cuentas() if c["tipo"] != "Tarjeta"), None)
 
         nombre_src = cuenta_src["nombre"] if cuenta_src else "Efectivo"
         saldo_deuda_actual = tarjeta["saldo"]
@@ -332,8 +346,7 @@ class SheetsClient:
     # --- MÉTODOS DE LA HOJA DE MOVIMIENTOS ---
 
     def _insert_movimiento_fila(self, fecha_str: str, mes: str, anio: int, tipo: str, categoria: str, concepto: str, monto: int, record_id: str, cuenta: str, cuenta_destino: str = ""):
-        if self.sheet is None:
-            self.connect()
+        self._asegurar_conexion()
 
         # Si la hoja tiene columna 'Presupuesto' (formato anterior):
         # [Fecha, Mes, Anio, Tipo, Categoria, Concepto, Presupuesto, Monto, ID, Cuenta, CuentaDestino]
@@ -351,8 +364,7 @@ class SheetsClient:
         Inserta un nuevo movimiento manual o de IA.
         record_data esperado: [Fecha, Mes, Anio, Tipo, Categoria, Concepto, Monto]
         """
-        if self.sheet is None:
-            self.connect()
+        self._asegurar_conexion()
 
         record_id = str(uuid.uuid4())[:8]
         tipo_mov = record_data[3]
@@ -387,8 +399,7 @@ class SheetsClient:
         return record_id
 
     def get_all_records(self) -> list:
-        if self.sheet is None:
-            self.connect()
+        self._asegurar_conexion()
 
         filas = self.sheet.get_all_values()
         if len(filas) <= 1:
