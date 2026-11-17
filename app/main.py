@@ -99,6 +99,90 @@ def procesar_respuesta_ia(info: dict, cuenta_override: str, cuentas: list[str]) 
         }
     }
 
+def crear_compromiso_prestamo(op: dict, cuenta_override: str = "") -> dict:
+    """
+    Registra un préstamo entre el usuario y otra persona:
+    - direccion "dado" (yo presté): crea compromiso de Ingreso (me lo deben) y registra el Egreso del dinero saliente.
+    - direccion "recibido" (me prestaron): crea compromiso de Egreso (yo debo) y registra el Ingreso del dinero recibido.
+    """
+    direccion = (op.get("direccion") or "recibido").lower()
+    persona = (op.get("nombre_persona") or "Préstamo").strip()
+    monto = int(op.get("monto", 0))
+    cuotas = max(1, int(op.get("cuotas", 1) or 1))
+    cuenta = cuenta_override or op.get("cuenta", "Efectivo")
+
+    if direccion == "dado":
+        flujo, nombre, tipo_inicial = "Ingreso", f"Préstamo a {persona}", "Egreso"
+        mensaje = (f"🤝 Préstamo a {persona} registrado: -${monto:,} desde {cuenta}. "
+                   f"Te lo deben en {'1 pago' if cuotas == 1 else f'{cuotas} cuotas'}.").replace(",", ".")
+    else:
+        flujo, nombre, tipo_inicial = "Egreso", f"Préstamo de {persona}", "Ingreso"
+        mensaje = (f"🤝 Préstamo de {persona} registrado: +${monto:,} en {cuenta}. "
+                   f"Lo devuelves en {'1 pago' if cuotas == 1 else f'{cuotas} cuotas'}.").replace(",", ".")
+
+    res = sheets_client.crear_compromiso(
+        nombre=nombre,
+        modalidad="Cuotas",
+        categoria="Préstamo",
+        monto_cuota=monto // cuotas,
+        cuotas_totales=cuotas,
+        dia_pago=1,
+        flujo=flujo
+    )
+
+    # Movimiento inicial del dinero en la cuenta
+    ahora = datetime.now()
+    fila = [
+        ahora.strftime("%d/%m/%Y"),
+        mes_espanol(ahora.month),
+        ahora.year,
+        tipo_inicial,
+        "Préstamo",
+        nombre,
+        monto
+    ]
+    sheets_client.append_record(fila, cuenta=cuenta)
+
+    return {
+        "accion": "prestamo",
+        "id": res["id"],
+        "compromiso": res,
+        "mensaje": mensaje
+    }
+
+def crear_compromiso_desde_ia(info: dict, cuenta: str = "") -> dict:
+    """
+    Crea el compromiso extraído por la IA. Si es un préstamo (categoría 'Préstamo'),
+    registra además el movimiento inicial del dinero en la cuenta:
+    flujo Ingreso = yo presté (dinero salió); flujo Egreso = me prestaron (dinero entró).
+    """
+    creado = sheets_client.crear_compromiso(
+        nombre=info.get("nombre", "Compromiso"),
+        modalidad=info.get("modalidad", "Recurrente"),
+        categoria=info.get("categoria", "Deudas"),
+        monto_cuota=int(info.get("monto_cuota", 0)),
+        cuotas_totales=int(info.get("cuotas_totales", 0)),
+        dia_pago=int(info.get("dia_pago", 1)),
+        flujo=info.get("flujo", "Egreso")
+    )
+
+    if creado["categoria"] == "Préstamo" and creado["monto_cuota"] > 0:
+        tipo_inicial = "Egreso" if creado["flujo"] == "Ingreso" else "Ingreso"
+        monto_inicial = creado["monto_cuota"] * max(1, creado["cuotas_totales"])
+        ahora = datetime.now()
+        fila = [
+            ahora.strftime("%d/%m/%Y"),
+            mes_espanol(ahora.month),
+            ahora.year,
+            tipo_inicial,
+            "Préstamo",
+            creado["nombre"],
+            monto_inicial
+        ]
+        sheets_client.append_record(fila, cuenta=(cuenta or "").strip() or "Efectivo")
+
+    return creado
+
 def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_disponibles: list[str] = None) -> dict:
     override = (cuenta_override or "").strip()
     accion = op.get("accion", "transaccion").lower()
@@ -169,6 +253,9 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
             "id": reg_id,
             "mensaje": f"✅ Pago registrado: {concepto} por ${monto_pago:,} ({cuenta_origen})".replace(",", ".")
         }
+
+    elif accion == "prestamo":
+        return crear_compromiso_prestamo(op, override)
 
     else:
         # Transacción ordinaria (Ingreso o Egreso)
@@ -389,15 +476,7 @@ def crear_compromiso_ia(req: MensajeRequest):
     info = llm_factory.parsear_compromiso(req.texto)
     validar_respuesta_ia(info, es_transaccion=False)
 
-    creado = sheets_client.crear_compromiso(
-        nombre=info.get("nombre", "Compromiso"),
-        modalidad=info.get("modalidad", "Recurrente"),
-        categoria=info.get("categoria", "Deudas"),
-        monto_cuota=int(info.get("monto_cuota", 0)),
-        cuotas_totales=int(info.get("cuotas_totales", 0)),
-        dia_pago=int(info.get("dia_pago", 1)),
-        flujo=info.get("flujo", "Egreso")
-    )
+    creado = crear_compromiso_desde_ia(info, req.cuenta)
     return {"status": "success", "compromiso": creado}
 
 @app.post("/compromisos/ia-audio", tags=["Compromisos"])
@@ -410,15 +489,7 @@ async def crear_compromiso_ia_audio(audio: UploadFile = File(...)):
     info = llm_factory.parsear_compromiso_multimodal(contenido, mime_type)
     validar_respuesta_ia(info, es_transaccion=False)
 
-    creado = sheets_client.crear_compromiso(
-        nombre=info.get("nombre", "Compromiso"),
-        modalidad=info.get("modalidad", "Recurrente"),
-        categoria=info.get("categoria", "Deudas"),
-        monto_cuota=int(info.get("monto_cuota", 0)),
-        cuotas_totales=int(info.get("cuotas_totales", 0)),
-        dia_pago=int(info.get("dia_pago", 1)),
-        flujo=info.get("flujo", "Egreso")
-    )
+    creado = crear_compromiso_desde_ia(info)
     return {"status": "success", "compromiso": creado}
 
 @app.post("/compromisos/manual", tags=["Compromisos"])
@@ -493,16 +564,20 @@ def liquidar_compromiso(comp_id: str, req: LiquidarCompromisoRequest = LiquidarC
     cuotas_restantes = resultado.get("cuotas_restantes", 0)
     concepto = f"Liquidación total: {resultado['nombre']} ({cuotas_restantes} cuotas)"
 
-    # Registrar movimiento de Egreso en la hoja de Movimientos y descontar de cuenta
+    # Registrar el movimiento final en la hoja de Movimientos y descontar/abonar la cuenta
     rec_id = registrar_movimiento_pago(resultado, req.cuenta, monto_total, concepto)
 
+    es_ingreso = resultado.get("flujo", "Egreso").lower() == "ingreso"
     descuento_msg = ""
     monto_teorico = resultado.get("monto_teorico", monto_total)
     if monto_teorico > monto_total:
         ahorro = monto_teorico - monto_total
         descuento_msg = f" (¡Ahorraste ${ahorro:,} COP en intereses!)".replace(",", ".")
 
-    mensaje = f"🎉 ¡Deuda liquidada al 100%! Se registró el egreso de '{resultado['nombre']}' por ${monto_total:,} desde {req.cuenta}{descuento_msg}.".replace(",", ".")
+    if es_ingreso:
+        mensaje = f"🎉 ¡Préstamo saldado al 100%! Se registró el ingreso de '{resultado['nombre']}' por ${monto_total:,} en {req.cuenta}."
+    else:
+        mensaje = f"🎉 ¡Deuda liquidada al 100%! Se registró el egreso de '{resultado['nombre']}' por ${monto_total:,} desde {req.cuenta}{descuento_msg}.".replace(",", ".")
     return {
         "status": "success",
         "message": mensaje,

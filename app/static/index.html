@@ -62,7 +62,7 @@
         </button>
         <button id="nav-pagos" onclick="cambiarPestana('pagos')" class="tab-btn-inactive py-2.5 px-5 text-sm transition flex items-center gap-2 whitespace-nowrap rounded-t-lg">
           <span>📅</span>
-          <span>Pagos y Deudas</span>
+          <span>Compromisos</span>
         </button>
         <button id="nav-cuentas" onclick="cambiarPestana('cuentas')" class="tab-btn-inactive py-2.5 px-5 text-sm transition flex items-center gap-2 whitespace-nowrap rounded-t-lg">
           <span>💳</span>
@@ -142,7 +142,7 @@
             <span id="badge-total-tarjetas" class="text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">0 tarjetas</span>
           </div>
           <button onclick="cambiarPestana('pagos')" class="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline">
-            Ir a Deudas →
+            Ir a Compromisos →
           </button>
         </div>
         <div id="lista-resumen-rapido-tarjetas" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -393,15 +393,15 @@
     </div>
 
     <!-- ================================================================= -->
-    <!-- PESTAÑA 2: 📅 PAGOS Y DEUDAS -->
+    <!-- PESTAÑA 2: 📅 COMPROMISOS (PAGOS, DEUDAS Y PRÉSTAMOS) -->
     <!-- ================================================================= -->
     <div id="seccion-pagos" class="hidden space-y-6">
 
       <!-- Encabezado y Botón Nuevo Compromiso -->
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 class="text-lg font-bold text-slate-900">📅 Pagos Recurrentes y Deudas</h2>
-          <p id="subtitulo-deudas-global" class="text-xs text-slate-500 mt-0.5">Control de servicios, suscripciones, créditos por cuotas y tarjetas de crédito</p>
+          <h2 class="text-lg font-bold text-slate-900">📅 Compromisos Recurrentes, Deudas y Préstamos</h2>
+          <p id="subtitulo-deudas-global" class="text-xs text-slate-500 mt-0.5">Control de servicios, suscripciones, créditos por cuotas, préstamos entre personas y tarjetas de crédito</p>
         </div>
         <button onclick="toggleFormNuevoCompromiso()" class="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-sm">
           <span>+</span>
@@ -767,6 +767,59 @@
         <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <button type="button" onclick="cerrarModalCta()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
           <button type="submit" id="btn-guardar-edit-cta" class="px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR COMPROMISO -->
+  <div id="modal-editar-comp" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+        <h3 class="text-base font-bold text-slate-900">✏️ Editar Compromiso</h3>
+        <button onclick="cerrarModalComp()" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+      </div>
+      <form onsubmit="guardarEdicionComp(event)" class="space-y-4">
+        <input type="hidden" id="edit-comp-id" />
+        <input type="hidden" id="edit-comp-flujo" />
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nombre</label>
+          <input type="text" id="edit-comp-nombre" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Modalidad</label>
+            <select id="edit-comp-modalidad" onchange="toggleCampoCuotasEdit()" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+              <option value="Recurrente">Recurrente (mensual)</option>
+              <option value="Cuotas">Cuotas</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Categoría</label>
+            <select id="edit-comp-categoria" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"></select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Valor de la cuota ($)</label>
+          <input type="number" id="edit-comp-monto" required min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div id="edit-comp-grupo-cuotas" class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Cuotas totales</label>
+            <input type="number" id="edit-comp-cuotas-totales" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Cuotas pagadas</label>
+            <input type="number" id="edit-comp-cuotas-pagadas" min="0" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Día de pago del mes</label>
+          <input type="number" id="edit-comp-dia" min="1" max="31" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="cerrarModalComp()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button type="submit" id="btn-guardar-edit-comp" class="px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white">Guardar Cambios</button>
         </div>
       </form>
     </div>

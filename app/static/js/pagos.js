@@ -31,7 +31,7 @@ function toggleCampoCuotas() {
 function actualizarCategoriasCompManual() {
   const flujo = document.getElementById('comp-flujo').value;
   const sel = document.getElementById('comp-categoria');
-  const opts = flujo === 'Ingreso' ? ['Trabajo', 'Préstamo', 'Otros'] : ['Deudas', 'Servicios', 'Suscripciones', 'Otros'];
+  const opts = flujo === 'Ingreso' ? ['Trabajo', 'Préstamo', 'Otros'] : ['Deudas', 'Servicios', 'Suscripciones', 'Préstamo', 'Otros'];
   sel.innerHTML = opts.map(o => `<option value="${o}">${o}</option>`).join('');
 }
 
@@ -170,21 +170,29 @@ function renderizarCuadriculaPagosYDeudas() {
   let compromisosHTML = todosLosCompromisos.map(c => {
     const esIngreso = (c.flujo || 'Egreso') === 'Ingreso';
     const esCuotas = c.modalidad === 'Cuotas';
+    const esPrestamo = c.categoria === 'Préstamo';
     const saldoRestanteTeorico = esCuotas ? Math.max(0, (c.cuotas_totales - c.cuotas_pagadas) * c.monto_cuota) : 0;
     const cuotasRestantes = esCuotas ? Math.max(0, c.cuotas_totales - c.cuotas_pagadas) : 0;
     const pctProgreso = (esCuotas && c.cuotas_totales > 0) ? Math.min(100, Math.round((c.cuotas_pagadas / c.cuotas_totales) * 100)) : 0;
+
+    const etiqueta = esPrestamo
+      ? (esIngreso ? '🤝 PRÉSTAMO POR COBRAR' : '🤝 PRÉSTAMO POR PAGAR')
+      : (esIngreso ? '+ INGRESO FIJO' : (esCuotas ? 'CRÉDITO POR CUOTAS' : 'PAGO FIJO'));
+    const colorEtiqueta = esPrestamo
+      ? (esIngreso ? 'text-emerald-700' : 'text-rose-700')
+      : (esIngreso ? 'text-emerald-700' : 'text-blue-700');
 
     const badgeEstado = c.pagado_este_mes
       ? `<span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">✓ Al día este mes</span>`
       : `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">Pendiente · Día ${c.dia_pago || 1}</span>`;
 
     return `
-      <div class="border ${esIngreso ? 'border-emerald-200' : 'border-slate-200'} bg-white rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">
+      <div class="border ${esPrestamo ? (esIngreso ? 'border-emerald-300' : 'border-rose-200') : (esIngreso ? 'border-emerald-200' : 'border-slate-200')} bg-white rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">
         <div>
           <div class="flex justify-between items-start gap-2">
             <div>
-              <span class="text-[10px] font-bold uppercase tracking-wider ${esIngreso ? 'text-emerald-700' : 'text-blue-700'}">
-                ${esIngreso ? '+ INGRESO FIJO' : (esCuotas ? 'CRÉDITO POR CUOTAS' : 'PAGO FIJO')} · ${c.categoria}
+              <span class="text-[10px] font-bold uppercase tracking-wider ${colorEtiqueta}">
+                ${etiqueta} · ${c.categoria}
               </span>
               <h3 class="font-bold text-slate-900 text-base mt-0.5">${c.nombre}</h3>
             </div>
@@ -223,17 +231,22 @@ function renderizarCuadriculaPagosYDeudas() {
             >
               ${esIngreso ? '✓ Cobrar' : '✓ Pagar cuota'}
             </button>
+            <button onclick="abrirModalEditarCompromiso('${c.id}')" title="Editar" class="text-xs text-slate-400 hover:text-blue-600 p-2 rounded-xl border border-slate-200 bg-white">
+              ✏️
+            </button>
             <button onclick="eliminarCompromiso('${c.id}', '${c.nombre}')" title="Eliminar" class="text-xs text-slate-400 hover:text-rose-600 p-2 rounded-xl border border-slate-200 bg-white">
               🗑️
             </button>
           </div>
 
-          ${(!esIngreso && esCuotas) ? `
+          ${esCuotas ? `
             <button
               onclick="abrirModalLiquidarCredito('${c.id}', '${c.nombre}', ${saldoRestanteTeorico}, ${cuotasRestantes})"
-              class="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+              class="w-full ${esIngreso ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'} border font-bold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
             >
-              ⚡ Saldar deuda completa (${formatoMoneda.format(saldoRestanteTeorico)})
+              ${esIngreso
+                ? `⚡ Cobrar todo de una (+${formatoMoneda.format(saldoRestanteTeorico)})`
+                : `⚡ Saldar deuda completa (${formatoMoneda.format(saldoRestanteTeorico)})`}
             </button>
           ` : ''}
 
@@ -399,5 +412,69 @@ async function pagarSaldoTarjetaTotal(id, nombre, saldo, btn) {
     mostrarAlerta('❌ ' + err.message, true);
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+// --- MODAL: EDITAR COMPROMISO (cuota, número de cuotas, día de pago, etc.) ---
+function abrirModalEditarCompromiso(id) {
+  const c = todosLosCompromisos.find(item => item.id === id);
+  if (!c) return;
+
+  document.getElementById('edit-comp-id').value = c.id;
+  document.getElementById('edit-comp-nombre').value = c.nombre;
+  document.getElementById('edit-comp-modalidad').value = c.modalidad;
+  document.getElementById('edit-comp-flujo').value = c.flujo || 'Egreso';
+  actualizarCategoriasCompEdit(c.flujo || 'Egreso', c.categoria);
+  document.getElementById('edit-comp-monto').value = c.monto_cuota;
+  document.getElementById('edit-comp-cuotas-totales').value = c.cuotas_totales || 0;
+  document.getElementById('edit-comp-cuotas-pagadas').value = c.cuotas_pagadas || 0;
+  document.getElementById('edit-comp-dia').value = c.dia_pago || 1;
+  toggleCampoCuotasEdit();
+
+  document.getElementById('modal-editar-comp').classList.remove('hidden');
+}
+
+function cerrarModalComp() {
+  document.getElementById('modal-editar-comp').classList.add('hidden');
+}
+
+// Muestra/oculta el grupo de cuotas solo cuando la modalidad es 'Cuotas'
+function toggleCampoCuotasEdit() {
+  const mod = document.getElementById('edit-comp-modalidad').value;
+  document.getElementById('edit-comp-grupo-cuotas').classList.toggle('hidden', mod !== 'Cuotas');
+}
+
+// Rellena el selector de categorías según el flujo (Ingreso o Egreso)
+function actualizarCategoriasCompEdit(flujo, seleccionada) {
+  const sel = document.getElementById('edit-comp-categoria');
+  const opts = flujo === 'Ingreso' ? ['Trabajo', 'Préstamo', 'Otros'] : ['Deudas', 'Servicios', 'Suscripciones', 'Préstamo', 'Otros'];
+  sel.innerHTML = opts.map(o => `<option value="${o}">${o}</option>`).join('');
+  if (seleccionada && opts.includes(seleccionada)) sel.value = seleccionada;
+}
+
+async function guardarEdicionComp(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-comp-id').value;
+  const payload = {
+    nombre: document.getElementById('edit-comp-nombre').value.trim(),
+    modalidad: document.getElementById('edit-comp-modalidad').value,
+    categoria: document.getElementById('edit-comp-categoria').value,
+    monto_cuota: parseInt(document.getElementById('edit-comp-monto').value || '0', 10),
+    cuotas_totales: parseInt(document.getElementById('edit-comp-cuotas-totales').value || '0', 10),
+    cuotas_pagadas: parseInt(document.getElementById('edit-comp-cuotas-pagadas').value || '0', 10),
+    dia_pago: parseInt(document.getElementById('edit-comp-dia').value || '1', 10),
+    flujo: document.getElementById('edit-comp-flujo').value
+  };
+
+  try {
+    const data = await api(`/compromisos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+    cerrarModalComp();
+    mostrarAlerta('✅ ' + data.message);
+    await sincronizarTodo();
+  } catch (err) {
+    mostrarAlerta('❌ ' + err.message, true);
   }
 }

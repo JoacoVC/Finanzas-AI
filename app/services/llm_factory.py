@@ -43,6 +43,15 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
    - "es_liquidacion": boolean (true si liquida el total de cuotas pendientes).
    - "monto": Entero positivo de la cuota o 0 si toma el valor configurado.
 
+5. "prestamo": Registro de un préstamo de dinero entre el usuario y otra persona. Solo aplica cuando el préstamo es NUEVO (acaba de pasar), no cuando se menciona pagar o cobrar uno ya registrado (eso es "pago_compromiso").
+   - "nombre_persona": Nombre de la otra persona (ej. "Samuel", "Andrea").
+   - "direccion": "dado" si el usuario le prestó SU dinero a otra persona ("le presté $50.000 a Samuel", "presté $50.000") → el usuario ESPERA RECIBIR ese dinero de vuelta.
+                  "recibido" si otra persona le prestó dinero al usuario ("Samuel me prestó $300.000", "me prestaron $300.000", "pedí prestado $300.000 a Samuel") → el usuario DEBE devolverlo.
+   - "monto": Entero positivo del valor TOTAL del préstamo. Si mencionan cuota mensual y número de meses, calcula el total (ej. "me paga $50.000 cada mes durante 3 meses" = 150000).
+   - "cuotas": Entero positivo de cuotas en que se pactó devolverlo. Si no se menciona, 1 (pago único).
+   - "cuenta": Cuenta de donde salió el dinero (si "dado") o donde entró (si "recibido"). Si no se aclara, "Efectivo".
+   * REGLA CLAVE: Un préstamo NUNCA se registra como accion "transaccion"; SIEMPRE es accion "prestamo".
+
 ### Reglas Críticas:
 1. MULTI-MOVIMIENTO: Si el usuario menciona varios movimientos en un solo mensaje o audio (ejemplo: "me acabo de hacer 25.000 pesos en unos domicilios, pero me gasté 5.000 en una Coca-Cola"), o si se adjuntan varias fotos de recibos, debes extraer y agregar CADA MOVIMIENTO INDIVIDUAL en la lista "operaciones".
 2. VALIDEZ: Si la entrada es un audio vacío, silencio absoluto, ruido incomprensible o no contiene ningún dato o intención financiera ("hola qué tal"), devuelve "valido": false y "operaciones": [].
@@ -72,6 +81,22 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
     }
   ]
 }
+
+Ejemplo de respuesta con un préstamo nuevo:
+{
+  "valido": true,
+  "resumen": "Préstamo registrado",
+  "operaciones": [
+    {
+      "accion": "prestamo",
+      "nombre_persona": "Samuel",
+      "direccion": "recibido",
+      "monto": 300000,
+      "cuotas": 1,
+      "cuenta": "Nequi"
+    }
+  ]
+}
 """
 
 PROMPT_COMPROMISO = """
@@ -86,10 +111,17 @@ Reglas:
    - "Recurrente" si es mensual indefinido sin fecha de fin (servicios, salario, suscripciones).
 5. "categoria":
    - Si "flujo" es "Ingreso", elige entre: ["Trabajo", "Préstamo", "Otros"].
-   - Si "flujo" es "Egreso", elige entre: ["Deudas", "Servicios", "Suscripciones"].
+   - Si "flujo" es "Egreso", elige entre: ["Deudas", "Servicios", "Suscripciones", "Préstamo", "Otros"].
 6. "monto_cuota": Valor entero de cada cuota/pago mensual.
 7. "cuotas_totales": Entero de cuotas totales si modalidad es "Cuotas", o 0 si es "Recurrente".
 8. "dia_pago": Día del mes (1 a 31) en que se paga o se recibe si lo menciona (ej. "los 15" -> 15). Si no lo menciona, pon 1.
+9. PRÉSTAMOS ENTRE PERSONAS: Si el texto describe un préstamo de dinero nuevo entre el usuario y otra persona ("Le presté $50.000 a Samuel", "Samuel me prestó $300.000", "me prestaron $100.000", "pedí prestado $200.000"):
+   - "flujo": "Ingreso" si el usuario prestó SU dinero a otra persona (se lo van a devolver a él). "Egreso" si le prestaron dinero al usuario (él debe devolverlo).
+   - "nombre": "Préstamo a [Persona]" si flujo es "Ingreso"; "Préstamo de [Persona]" si flujo es "Egreso" (ej. "Préstamo a Samuel", "Préstamo de Samuel").
+   - "categoria": "Préstamo".
+   - "modalidad": SIEMPRE "Cuotas" para préstamos.
+   - "cuotas_totales": Número de cuotas pactadas. Si no se menciona, 1 (pago único).
+   - "monto_cuota": Valor TOTAL del préstamo dividido entre las cuotas (ej. $300.000 en 3 cuotas = 100000).
 
 Responde ÚNICAMENTE con un objeto JSON válido:
 {"valido": true, "flujo": "Egreso", "nombre": "...", "modalidad": "...", "categoria": "...", "monto_cuota": 0, "cuotas_totales": 0, "dia_pago": 1}
