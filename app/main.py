@@ -1,59 +1,27 @@
 import os
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from datetime import datetime
-from app.services.sheets_client import sheets_client
+
+from app.models.schemas import (
+    MensajeRequest,
+    TransaccionManualRequest,
+    CompromisoManualRequest,
+    CuentaRequest,
+    PagoCompromisoRequest,
+    LiquidarCompromisoRequest,
+    PagoTarjetaDirectoRequest,
+    TrasladoRequest
+)
+from app.services.sheets_client import sheets_client, mes_espanol
 from app.services.llm_factory import llm_factory
 
-app = FastAPI(title="Finanzas AI Backend", version="2.0.0")
+app = FastAPI(title="Finanzas AI Backend", version="3.0.0")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-class MensajeRequest(BaseModel):
-    texto: str
-    cuenta: str = ""
-
-class TransaccionManualRequest(BaseModel):
-    fecha: str
-    tipo: str
-    categoria: str
-    concepto: str
-    presupuesto: int = 0
-    monto: int
-    cuenta: str = "Efectivo"
-
-class CompromisoManualRequest(BaseModel):
-    nombre: str
-    modalidad: str
-    categoria: str
-    monto_cuota: int
-    cuotas_totales: int = 0
-    cuotas_pagadas: int = 0
-    dia_pago: int = 1
-    flujo: str = "Egreso"
-
-class CuentaRequest(BaseModel):
-    nombre: str
-    tipo: str  # "Efectivo", "Banco", "Tarjeta"
-    saldo: int = 0
-    cupo_total: int = 0
-
-class PagoCompromisoRequest(BaseModel):
-    cuenta: str = "Efectivo"
-
-class PagoTarjetaDirectoRequest(BaseModel):
-    cuenta_origen: str = "Efectivo"
-    monto: int = 0
-    es_total: bool = True
-
-def mes_espanol(mes_num: int) -> str:
-    meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
-             "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    return meses[mes_num - 1]
 
 def validar_respuesta_ia(info: dict | None, es_transaccion: bool = True):
     if not info or info.get("valido") is False:
@@ -70,8 +38,8 @@ def validar_respuesta_ia(info: dict | None, es_transaccion: bool = True):
             )
 
 def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_disponibles: list[str] = None) -> dict:
-    accion = op.get("accion", "transaccion")
-    
+    accion = op.get("accion", "transaccion").lower()
+
     if accion == "pago_tarjeta":
         tarjeta = op.get("tarjeta", "")
         cuenta_origen = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta_origen", "Efectivo")
@@ -89,7 +57,7 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
             "mensaje": resultado.get("mensaje", f"Pago de tarjeta {tarjeta} aplicado.")
         }
 
-    elif accion == "transferencia":
+    elif accion in ["transferencia", "traslado"]:
         origen = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta_origen", "Efectivo")
         destino = op.get("cuenta_destino", "Efectivo")
         monto = int(op.get("monto", 0))
@@ -101,29 +69,70 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
             concepto=concepto
         )
         return {
-            "accion": "transferencia",
+            "accion": "traslado",
             "detalle": resultado,
-            "mensaje": resultado.get("mensaje", f"Transferencia de ${monto:,} de {origen} a {destino} realizada.".replace(",", "."))
+            "mensaje": resultado.get("mensaje", f"Traslado de ${monto:,} de {origen} a {destino} realizado.".replace(",", "."))
+        }
+
+    elif accion == "pago_compromiso":
+        nombre_comp = op.get("nombre_compromiso", "")
+        cuenta_origen = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta_origen", "Efectivo")
+        es_liq = bool(op.get("es_liquidacion", False))
+        monto_custom = int(op.get("monto", 0))
+
+        compromisos = sheets_client.listar_compromisos_activos()
+        objetivo = next((c for c in compromisos if c["nombre"].lower() == nombre_comp.lower()), None)
+        if not objetivo:
+            objetivo = next((c for c in compromisos if nombre_comp.lower() in c["nombre"].lower()), None)
+
+        if not objetivo:
+            raise ValueError(f"No se encontró el compromiso o deuda '{nombre_comp}'.")
+
+        ahora = datetime.now()
+        periodo = ahora.strftime("%Y-%m")
+
+        if es_liq and objetivo["modalidad"] == "Cuotas":
+            res = sheets_client.liquidar_compromiso(objetivo["id"], periodo, monto_real=monto_custom if monto_custom > 0 else None)
+            monto_pago = res["monto_liquidacion"]
+            concepto = f"Liquidación total crédito: {res['nombre']} ({res['cuotas_restantes']} cuotas)"
+        else:
+            res = sheets_client.registrar_pago_compromiso(objetivo["id"], periodo)
+            monto_pago = monto_custom if monto_custom > 0 else res["monto_cuota"]
+            if res["modalidad"] == "Cuotas":
+                concepto = f"{res['nombre']} (Cuota {res['cuotas_pagadas']}/{res['cuotas_totales']})"
+            else:
+                concepto = f"{res['nombre']} ({mes_espanol(ahora.month)})"
+
+        es_ingreso = res.get("flujo", "Egreso").lower() == "ingreso"
+        tipo_mov = "Ingreso" if es_ingreso else "Egreso"
+        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo_mov, res["categoria"], concepto, monto_pago]
+        reg_id = sheets_client.append_record(fila, cuenta=cuenta_origen)
+
+        return {
+            "accion": "pago_compromiso",
+            "id": reg_id,
+            "mensaje": f"✅ Pago registrado: {concepto} por ${monto_pago:,} ({cuenta_origen})".replace(",", ".")
         }
 
     else:
-        # Transacción común (Ingreso o Egreso)
+        # Transacción ordinaria (Ingreso, Egreso o Traslado)
         tipo = op.get("tipo", "Egreso")
         categoria = op.get("categoria", "Otros")
         concepto = op.get("concepto", "Movimiento")
         monto = int(op.get("monto", 0))
-        
+
         cuenta = cuenta_override.strip() if cuenta_override.strip() else op.get("cuenta", "Efectivo")
         if cuentas_disponibles and cuenta not in cuentas_disponibles:
             cuenta_match = next((c for c in cuentas_disponibles if c.lower() == cuenta.lower()), None)
             cuenta = cuenta_match if cuenta_match else (cuentas_disponibles[0] if cuentas_disponibles else "Efectivo")
 
         ahora = datetime.now()
-        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, 0, monto]
+        fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, monto]
         registro_id = sheets_client.append_record(fila, cuenta=cuenta)
-        
-        signo = "+" if tipo.lower() == "ingreso" else "-"
-        msg = f"{'🟢' if tipo.lower() == 'ingreso' else '🔴'} {tipo} ({cuenta}): {concepto} por {signo}${monto:,} [{categoria}]".replace(",", ".")
+
+        signo = "+" if tipo.lower() == "ingreso" else ("=" if tipo.lower() == "traslado" else "-")
+        emoji = "🟢" if tipo.lower() == "ingreso" else ("🔁" if tipo.lower() == "traslado" else "🔴")
+        msg = f"{emoji} {tipo} ({cuenta}): {concepto} por {signo}${monto:,} [{categoria}]".replace(",", ".")
         return {
             "accion": "transaccion",
             "id": registro_id,
@@ -154,7 +163,7 @@ def obtener_cuentas():
 @app.post("/cuentas", tags=["Cuentas"])
 def crear_cuenta(req: CuentaRequest):
     try:
-        creada = sheets_client.crear_cuenta(req.nombre, req.tipo, req.saldo, req.cupo_total)
+        creada = sheets_client.crear_cuenta(req.nombre, req.tipo, req.saldo, req.cupo_total, req.dia_pago)
         return {"status": "success", "cuenta": creada}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -162,7 +171,7 @@ def crear_cuenta(req: CuentaRequest):
 @app.put("/cuentas/{cuenta_id}", tags=["Cuentas"])
 def actualizar_cuenta(cuenta_id: str, req: CuentaRequest):
     try:
-        sheets_client.actualizar_cuenta(cuenta_id, req.nombre, req.tipo, req.saldo, req.cupo_total)
+        sheets_client.actualizar_cuenta(cuenta_id, req.nombre, req.tipo, req.saldo, req.cupo_total, req.dia_pago)
         return {"status": "success", "message": "Cuenta actualizada correctamente."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -182,16 +191,30 @@ def pagar_tarjeta_directo(cuenta_id: str, req: PagoTarjetaDirectoRequest = PagoT
         tarjeta = next((c for c in cuentas if c["id"] == cuenta_id), None)
         if not tarjeta:
             raise HTTPException(status_code=404, detail="Tarjeta no encontrada.")
-        
+
         resultado = sheets_client.pagar_tarjeta(
             nombre_tarjeta=tarjeta["nombre"],
             cuenta_origen=req.cuenta_origen,
             monto=req.monto,
-            es_total=req.es_total
+            es_total=req.es_total,
+            concepto=req.concepto
         )
         return {"status": "success", "data": resultado, "message": resultado.get("mensaje")}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/traslado", tags=["Cuentas"])
+def realizar_traslado(req: TrasladoRequest):
+    try:
+        resultado = sheets_client.transferir_entre_cuentas(
+            cuenta_origen=req.cuenta_origen,
+            cuenta_destino=req.cuenta_destino,
+            monto=req.monto,
+            concepto=req.concepto
+        )
+        return {"status": "success", "data": resultado, "message": resultado.get("mensaje")}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -203,22 +226,33 @@ def obtener_resumen_deudas():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINTS DE TRANSACCIONES ---
+# --- ENDPOINTS DE TRANSACCIONES / MOVIMIENTOS ---
 
 @app.get("/movimientos", tags=["Transacciones"])
 def obtener_movimientos():
     try:
         registros = sheets_client.get_all_records()
+
+        # Traslados NO se suman ni a ingresos ni a egresos
         total_ingresos = sum(r["monto"] for r in registros if r["tipo"].lower() == "ingreso")
         total_egresos = sum(r["monto"] for r in registros if r["tipo"].lower() == "egreso")
         balance = total_ingresos - total_egresos
+
+        resumen_deudas = sheets_client.obtener_resumen_deudas()
+        deuda_total = resumen_deudas.get("total_deuda_global", 0)
+
+        # Saldo disponible en cuentas líquidas
+        cuentas = sheets_client.listar_cuentas()
+        saldo_disponible = sum(c["saldo"] for c in cuentas if c["tipo"] != "Tarjeta")
 
         return {
             "status": "success",
             "resumen": {
                 "ingresos": total_ingresos,
                 "egresos": total_egresos,
-                "balance": balance
+                "balance": balance,
+                "deuda_total": deuda_total,
+                "saldo_disponible": saldo_disponible
             },
             "movimientos": list(reversed(registros))
         }
@@ -232,7 +266,7 @@ def registrar_transaccion(req: MensajeRequest):
         cuentas = [c["nombre"] for c in sheets_client.listar_cuentas()]
         info = llm_factory.parsear_operaciones(req.texto, contexto)
         validar_respuesta_ia(info, es_transaccion=True)
-        
+
         operaciones = info.get("operaciones", [])
         ejecutadas = []
         for op in operaciones:
@@ -290,7 +324,7 @@ async def registrar_transaccion_media(
 
         contexto = sheets_client.obtener_contexto_financiero()
         cuentas = [c["nombre"] for c in sheets_client.listar_cuentas()]
-        
+
         info = llm_factory.parsear_operaciones_multimodal(
             archivos=archivos_bytes,
             nota_extra=nota,
@@ -330,11 +364,25 @@ async def registrar_transaccion_media(
 def registrar_manual(req: TransaccionManualRequest):
     try:
         dt = datetime.strptime(req.fecha, "%Y-%m-%d")
+
+        if req.tipo.lower() == "traslado":
+            resultado = sheets_client.transferir_entre_cuentas(
+                cuenta_origen=req.cuenta,
+                cuenta_destino=req.cuenta_destino,
+                monto=req.monto,
+                concepto=req.concepto
+            )
+            return {
+                "status": "success",
+                "message": resultado.get("mensaje", "Traslado registrado exitosamente."),
+                "data": resultado
+            }
+
         fila = [
             dt.strftime("%d/%m/%Y"), mes_espanol(dt.month), dt.year,
-            req.tipo, req.categoria, req.concepto, req.presupuesto, req.monto
+            req.tipo, req.categoria, req.concepto, req.monto
         ]
-        registro_id = sheets_client.append_record(fila, cuenta=req.cuenta)
+        registro_id = sheets_client.append_record(fila, cuenta=req.cuenta, cuenta_destino=req.cuenta_destino)
 
         return {
             "status": "success",
@@ -350,9 +398,9 @@ def actualizar_movimiento(record_id: str, req: TransaccionManualRequest):
         dt = datetime.strptime(req.fecha, "%Y-%m-%d")
         fila = [
             dt.strftime("%d/%m/%Y"), mes_espanol(dt.month), dt.year,
-            req.tipo, req.categoria, req.concepto, req.presupuesto, req.monto
+            req.tipo, req.categoria, req.concepto, req.monto
         ]
-        sheets_client.update_record(record_id, fila, cuenta=req.cuenta)
+        sheets_client.update_record(record_id, fila, cuenta=req.cuenta, cuenta_destino=req.cuenta_destino)
         return {"status": "success", "message": "Movimiento actualizado correctamente."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -383,7 +431,7 @@ def crear_compromiso_ia(req: MensajeRequest):
     try:
         info = llm_factory.parsear_compromiso(req.texto)
         validar_respuesta_ia(info, es_transaccion=False)
-        
+
         creado = sheets_client.crear_compromiso(
             nombre=info.get("nombre", "Compromiso"),
             modalidad=info.get("modalidad", "Recurrente"),
@@ -474,6 +522,8 @@ def pagar_compromiso(comp_id: str, req: PagoCompromisoRequest = PagoCompromisoRe
             concepto = f"{resultado['nombre']} ({mes_espanol(ahora.month)})"
 
         tipo_mov = "Ingreso" if es_ingreso else "Egreso"
+        monto_cuota = resultado["monto_cuota"]
+
         fila = [
             ahora.strftime("%d/%m/%Y"),
             mes_espanol(ahora.month),
@@ -481,17 +531,16 @@ def pagar_compromiso(comp_id: str, req: PagoCompromisoRequest = PagoCompromisoRe
             tipo_mov,
             resultado["categoria"],
             concepto,
-            resultado["monto_cuota"],
-            resultado["monto_cuota"]
+            monto_cuota
         ]
         sheets_client.append_record(fila, cuenta=req.cuenta)
 
         if es_ingreso:
-            mensaje = f"✅ Ingreso registrado: {concepto} por +${resultado['monto_cuota']:,} en {req.cuenta}".replace(",", ".")
+            mensaje = f"✅ Ingreso registrado: {concepto} por +${monto_cuota:,} en {req.cuenta}".replace(",", ".")
         elif resultado["finalizado"]:
-            mensaje = f"🎉 ¡Deuda finalizada! Pagaste la última cuota de '{resultado['nombre']}'."
+            mensaje = f"🎉 ¡Deuda finalizada! Pagaste la última cuota de '{resultado['nombre']}' (${monto_cuota:,}) desde {req.cuenta}."
         else:
-            mensaje = f"✅ Pago registrado: {concepto} por ${resultado['monto_cuota']:,} ({req.cuenta})".replace(",", ".")
+            mensaje = f"✅ Pago registrado: {concepto} por ${monto_cuota:,} ({req.cuenta})".replace(",", ".")
 
         return {"status": "success", "finalizado": resultado["finalizado"], "message": mensaje}
     except Exception as e:
@@ -499,39 +548,59 @@ def pagar_compromiso(comp_id: str, req: PagoCompromisoRequest = PagoCompromisoRe
 
 @app.post("/compromisos/{comp_id}/marcar-pagado", tags=["Compromisos"])
 def marcar_compromiso_pagado_sin_saldo(comp_id: str):
-    """Marca el compromiso como pagado/cobrado este mes sin registrar movimiento ni alterar el saldo actual."""
+    """Marca el compromiso como al día en el mes sin registrar egreso ni alterar cuentas."""
     try:
         periodo_actual = datetime.now().strftime("%Y-%m")
         resultado = sheets_client.registrar_pago_compromiso(comp_id, periodo_actual)
-        mensaje = f"✓ '{resultado['nombre']}' marcado como al día este mes (sin afectar tu saldo actual)."
+        mensaje = f"✓ '{resultado['nombre']}' marcado como al día este mes (sin alterar saldos)."
         return {"status": "success", "message": mensaje}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/compromisos/{comp_id}/liquidar", tags=["Compromisos"])
-def liquidar_compromiso(comp_id: str, req: PagoCompromisoRequest = PagoCompromisoRequest()):
+def liquidar_compromiso(comp_id: str, req: LiquidarCompromisoRequest = LiquidarCompromisoRequest()):
+    """
+    Saldar la totalidad de un crédito a cuotas con monto real negociable (descuento de intereses).
+    Registra SIEMPRE el Egreso en la cuenta seleccionada y en la hoja de Movimientos.
+    """
     try:
         ahora = datetime.now()
         periodo_actual = ahora.strftime("%Y-%m")
-        resultado = sheets_client.liquidar_compromiso(comp_id, periodo_actual)
+        resultado = sheets_client.liquidar_compromiso(comp_id, periodo_actual, monto_real=req.monto_real)
 
         monto_total = resultado["monto_liquidacion"]
-        concepto = f"{resultado['nombre']} (Liquidación total - {resultado['cuotas_restantes']} cuotas)"
+        cuotas_restantes = resultado.get("cuotas_restantes", 0)
+        concepto = f"Liquidación total: {resultado['nombre']} ({cuotas_restantes} cuotas)"
 
+        # Registrar movimiento de Egreso en la hoja de Movimientos y descontar de cuenta
         fila = [
             ahora.strftime("%d/%m/%Y"),
             mes_espanol(ahora.month),
             ahora.year,
             "Egreso",
-            resultado["categoria"],
+            resultado.get("categoria", "Deudas"),
             concepto,
-            monto_total,
             monto_total
         ]
-        sheets_client.append_record(fila, cuenta=req.cuenta)
+        rec_id = sheets_client.append_record(fila, cuenta=req.cuenta)
 
-        mensaje = f"🎉 ¡Deuda liquidada! Se registró el pago final de '{resultado['nombre']}' por ${monto_total:,}".replace(",", ".")
-        return {"status": "success", "message": mensaje}
+        descuento_msg = ""
+        monto_teorico = resultado.get("monto_teorico", monto_total)
+        if monto_teorico > monto_total:
+            ahorro = monto_teorico - monto_total
+            descuento_msg = f" (¡Ahorraste ${ahorro:,} COP en intereses!)".replace(",", ".")
+
+        mensaje = f"🎉 ¡Deuda liquidada al 100%! Se registró el egreso de '{resultado['nombre']}' por ${monto_total:,} desde {req.cuenta}{descuento_msg}.".replace(",", ".")
+        return {
+            "status": "success",
+            "message": mensaje,
+            "data": {
+                "record_id": rec_id,
+                "monto_pagado": monto_total,
+                "cuenta": req.cuenta,
+                "finalizado": True
+            }
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

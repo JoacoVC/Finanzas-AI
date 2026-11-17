@@ -28,12 +28,14 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
      * true: Si el usuario dice "pagué el saldo de la tarjeta", "pagué toda la tarjeta", "pagué la tarjeta completa", "liquidé la tarjeta", "dejé la tarjeta en cero". El sistema tomará la deuda viva actual de la tarjeta y la dejará en $0.
      * false: Si el usuario da un monto específico para abonar (ej. "pagué 500.000 de la tarjeta").
    - "monto": Entero positivo del abono si es_total es false. Si es_total es true, pon 0 (el backend usará el saldo total adeudado).
+   * REGLA CLAVE: Pagar una tarjeta de crédito desde una cuenta de ahorros o efectivo (ej. "pagué Rappicard desde Nequi") NUNCA es un traslado ordinario; es SIEMPRE "pago_tarjeta".
 
-3. "transferencia": Movimiento de fondos entre dos cuentas propias.
+3. "transferencia" (o "traslado"): Movimiento de fondos entre dos cuentas propias líquidas (ej. de Bancolombia a Nequi, o de Efectivo a Daviplata).
    - "cuenta_origen": Cuenta desde donde sale el dinero.
    - "cuenta_destino": Cuenta a donde entra el dinero.
    - "monto": Entero positivo.
-   - "concepto": Breve descripción (ej. "Traslado de Bancolombia a Nequi").
+   - "concepto": Breve descripción (ej. "Traslado de Nequi a Rappi cuenta de ahorros").
+   * REGLA CLAVE: Un traslado entre cuentas propias NO es ingreso ni egreso general de la persona; solo traslada saldo entre cuentas. Si la cuenta destino es una tarjeta de crédito, usa "pago_tarjeta".
 
 4. "pago_compromiso": Pago de una cuota o liquidación de un compromiso recurrente o deuda registrada.
    - "nombre_compromiso": Nombre del compromiso activo según el contexto (ej. "Préstamo Moto", "Netflix", "Plan Celular").
