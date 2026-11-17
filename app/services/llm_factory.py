@@ -1,8 +1,16 @@
 import json
 import time
+from datetime import datetime
 from google import genai
 from google.genai import types
 from app.core.config import settings
+
+DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+def _contexto_fecha_actual() -> str:
+    """Línea de contexto con la fecha actual para que la IA resuelva expresiones relativas ('ayer', 'hace 3 días')."""
+    ahora = datetime.now()
+    return f"FECHA ACTUAL: {ahora.strftime('%Y-%m-%d')} ({DIAS_SEMANA[ahora.weekday()]})"
 
 PROMPT_FINANCIERO_MULTIMODAL = """
 Eres un asistente de finanzas personales altamente inteligente, ágil y experto en Colombia.
@@ -20,6 +28,7 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
    - "monto": Número entero positivo en pesos colombianos, sin puntos ni signos (ej. 25000).
      En Colombia: "25 lucas", "25 barras", "25 mil" o "25k" = 25000; "500 mil" = 500000; "1 millón" o "1m" = 1000000.
    - "cuenta": Nombre exacto de la cuenta o tarjeta utilizada según las cuentas disponibles en el contexto (ej. "Rappicard", "Bancolombia", "Efectivo", "Nequi"). Si no se menciona o no se deduce con claridad, usa "Efectivo".
+   - "fecha": (opcional) Fecha en que ocurrió el movimiento, según la Regla de FECHA.
 
 2. "pago_tarjeta": Pago total o abono parcial a una tarjeta de crédito.
    - "tarjeta": Nombre exacto de la tarjeta de crédito a pagar (ej. "Rappicard").
@@ -42,6 +51,7 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
    - "cuenta_origen": Cuenta con que se paga.
    - "es_liquidacion": boolean (true si liquida el total de cuotas pendientes).
    - "monto": Entero positivo de la cuota o 0 si toma el valor configurado.
+   - "fecha": (opcional) Fecha en que se hizo el pago, según la Regla de FECHA.
 
 5. "prestamo": Registro de un préstamo de dinero entre el usuario y otra persona. Solo aplica cuando el préstamo es NUEVO (acaba de pasar), no cuando se menciona pagar o cobrar uno ya registrado (eso es "pago_compromiso").
    - "nombre_persona": Nombre de la otra persona (ej. "Samuel", "Andrea").
@@ -50,6 +60,7 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
    - "monto": Entero positivo del valor TOTAL del préstamo. Si mencionan cuota mensual y número de meses, calcula el total (ej. "me paga $50.000 cada mes durante 3 meses" = 150000).
    - "cuotas": Entero positivo de cuotas en que se pactó devolverlo. Si no se menciona, 1 (pago único).
    - "cuenta": Cuenta de donde salió el dinero (si "dado") o donde entró (si "recibido"). Si no se aclara, "Efectivo".
+   - "fecha": (opcional) Fecha en que ocurrió el préstamo, según la Regla de FECHA.
    * REGLA CLAVE: Un préstamo NUNCA se registra como accion "transaccion"; SIEMPRE es accion "prestamo".
 
 ### Reglas Críticas:
@@ -57,6 +68,7 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
 2. VALIDEZ: Si la entrada es un audio vacío, silencio absoluto, ruido incomprensible o no contiene ningún dato o intención financiera ("hola qué tal"), devuelve "valido": false y "operaciones": [].
 3. MONTO: En transacciones normales, el monto DEBE ser mayor a 0.
 4. RESUMEN: Una frase breve y humana que explique qué se procesará (ej. "Registrados 1 ingreso ($25.000) y 1 egreso ($5.000)" o "Pago de saldo total de Rappicard desde Bancolombia").
+5. FECHA: Toda operación acepta el campo "fecha" en formato "YYYY-MM-DD" indicando CUÁNDO ocurrió, usando la FECHA ACTUAL indicada en el contexto como referencia. Reglas: si el usuario no menciona fecha o dice "hoy", omite el campo; "ayer" = un día antes; "anteayer" = dos días antes; "hace N días" = N días antes; fechas explícitas ("el 5 de noviembre", "el sábado pasado") se resuelven a la fecha exacta más cercana coherente con la FECHA ACTUAL. Si no puedes determinarla con certeza, omite el campo.
 
 ### Formato de Respuesta JSON (Únicamente este objeto JSON sin bloques extras):
 {
@@ -122,6 +134,7 @@ Reglas:
    - "modalidad": SIEMPRE "Cuotas" para préstamos.
    - "cuotas_totales": Número de cuotas pactadas. Si no se menciona, 1 (pago único).
    - "monto_cuota": Valor TOTAL del préstamo dividido entre las cuotas (ej. $300.000 en 3 cuotas = 100000).
+10. "fecha": (opcional) Fecha en que ocurrió el préstamo, formato "YYYY-MM-DD", usando la FECHA ACTUAL indicada en el contexto como referencia ("ayer" = un día antes, "hace N días" = N días antes). Omítelo si no aplica o no se menciona fecha.
 
 Responde ÚNICAMENTE con un objeto JSON válido:
 {"valido": true, "flujo": "Egreso", "nombre": "...", "modalidad": "...", "categoria": "...", "monto_cuota": 0, "cuotas_totales": 0, "dia_pago": 1}
@@ -172,7 +185,7 @@ class LLMFactory:
         raise RuntimeError(f"Todos los modelos de Gemini están ocupados o con límite temporal. Detalle: {ultimo_error}")
 
     def parsear_operaciones(self, texto: str, contexto_financiero: str = "") -> dict | None:
-        contenidos = [PROMPT_FINANCIERO_MULTIMODAL]
+        contenidos = [PROMPT_FINANCIERO_MULTIMODAL, _contexto_fecha_actual()]
         if contexto_financiero.strip():
             contenidos.append(contexto_financiero.strip())
         contenidos.append(f"Entrada del usuario: {texto}")
@@ -184,7 +197,7 @@ class LLMFactory:
         nota_extra: str = "",
         contexto_financiero: str = ""
     ) -> dict | None:
-        contenidos = [PROMPT_FINANCIERO_MULTIMODAL]
+        contenidos = [PROMPT_FINANCIERO_MULTIMODAL, _contexto_fecha_actual()]
         if contexto_financiero.strip():
             contenidos.append(contexto_financiero.strip())
         
@@ -198,10 +211,10 @@ class LLMFactory:
         return self._generar_con_respaldo(contenidos)
 
     def parsear_compromiso(self, texto: str) -> dict | None:
-        return self._generar_con_respaldo([PROMPT_COMPROMISO, f"Texto del usuario: {texto}"])
+        return self._generar_con_respaldo([PROMPT_COMPROMISO, _contexto_fecha_actual(), f"Texto del usuario: {texto}"])
 
     def parsear_compromiso_multimodal(self, file_bytes: bytes, mime_type: str) -> dict | None:
         part_audio = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-        return self._generar_con_respaldo([PROMPT_COMPROMISO, part_audio])
+        return self._generar_con_respaldo([PROMPT_COMPROMISO, _contexto_fecha_actual(), part_audio])
 
 llm_factory = LLMFactory()

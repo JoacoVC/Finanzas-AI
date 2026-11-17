@@ -32,7 +32,7 @@ function renderizarCuadriculaCuentasP3() {
             <div class="bg-purple-600 h-2 rounded-full" style="width: ${pctUso}%"></div>
           </div>
           ${diaPago > 0 ? `
-            <p class="text-[11px] font-bold text-amber-700 pt-1">📅 Día límite de pago: ${diaPago}</p>
+            <p class="text-[11px] font-bold text-amber-700 pt-1">📅 Día límite de pago: ${diaPago} de ${mesVencimiento(diaPago)}</p>
           ` : ''}
         </div>
       `;

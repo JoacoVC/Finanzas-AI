@@ -56,7 +56,7 @@ function renderizarResumenRapidoTarjetas() {
     const diaPago = t.dia_pago || 0;
 
     const badgeFecha = (tieneDeuda && diaPago > 0)
-      ? `<span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md flex items-center gap-1">📅 Límite: Día ${diaPago}</span>`
+      ? `<span class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md flex items-center gap-1">📅 Límite: Día ${diaPago} · ${mesVencimiento(diaPago)}</span>`
       : (tieneDeuda
         ? `<span class="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md">Saldo pendiente</span>`
         : `<span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md">Al día ($0)</span>`);

@@ -93,3 +93,14 @@ function obtenerMovimientosFiltradosPorFecha() {
     return coincideMes && coincideAnio;
   });
 }
+
+// Nombre del mes al que corresponde el próximo vencimiento de un día del mes.
+// - yaPagado === null: sin registro de pago (tarjetas) -> si el día ya pasó este mes, el vencimiento es del mes siguiente.
+// - yaPagado === true/false (compromisos): el flag 'pagado este mes' manda; si no se ha pagado, el vencimiento es del mes actual (aunque el día ya haya pasado = vencido).
+function mesVencimiento(diaPago, yaPagado = null) {
+  const hoy = new Date();
+  const offset = (yaPagado !== null)
+    ? (yaPagado ? 1 : 0)
+    : (hoy.getDate() > diaPago ? 1 : 0);
+  return MESES_ES[(hoy.getMonth() + offset) % 12];
+}

@@ -107,7 +107,7 @@ function renderizarCuadriculaPagosYDeudas() {
     const diaPago = t.dia_pago || 0;
 
     const badgeFechaLimite = (tieneDeuda && diaPago > 0)
-      ? `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">📅 Límite: Día ${diaPago}</span>`
+      ? `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">📅 Límite: Día ${diaPago} · ${mesVencimiento(diaPago)}</span>`
       : (tieneDeuda
         ? `<span class="text-[11px] font-bold bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full">Saldo pendiente</span>`
         : `<span class="text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">Al día ($0)</span>`);
@@ -183,8 +183,8 @@ function renderizarCuadriculaPagosYDeudas() {
       : (esIngreso ? 'text-emerald-700' : 'text-blue-700');
 
     const badgeEstado = c.pagado_este_mes
-      ? `<span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">✓ Al día este mes</span>`
-      : `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">Pendiente · Día ${c.dia_pago || 1}</span>`;
+      ? `<span class="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">✓ Pagado este mes · Próximo: Día ${c.dia_pago || 1} de ${mesVencimiento(c.dia_pago || 1, true)}</span>`
+      : `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">Pendiente · Día ${c.dia_pago || 1} de ${mesVencimiento(c.dia_pago || 1, false)}</span>`;
 
     return `
       <div class="border ${esPrestamo ? (esIngreso ? 'border-emerald-300' : 'border-rose-200') : (esIngreso ? 'border-emerald-200' : 'border-slate-200')} bg-white rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">

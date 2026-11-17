@@ -26,3 +26,6 @@ const CLS_ANALYSIS_INACTIVE = 'px-3.5 py-1.5 rounded-lg text-xs font-bold text-s
 const CLS_ANALYSIS_TODOS   = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-xs transition';
 const CLS_ANALYSIS_EGRESO  = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-xs transition';
 const CLS_ANALYSIS_INGRESO = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-xs transition';
+
+// Meses en español (índice 0 = Enero, igual que Date.getMonth())
+const MESES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];

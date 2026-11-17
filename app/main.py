@@ -51,16 +51,29 @@ def validar_respuesta_ia(info: dict | None, es_transaccion: bool = True):
                 detail="No se detectó un monto válido o la instrucción no contiene movimientos claros."
             )
 
-def concepto_pago_compromiso(res: dict) -> str:
+def _fecha_desde_ia(datos: dict) -> datetime:
+    """
+    Resuelve la fecha del movimiento indicada por la IA ('YYYY-MM-DD', ej. 'ayer' ya resuelto).
+    Si falta o es inválida, usa la fecha actual.
+    """
+    raw = (datos.get("fecha") or "").strip()
+    if raw:
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            pass
+    return datetime.now()
+
+def concepto_pago_compromiso(res: dict, fecha: datetime | None = None) -> str:
     """Concepto estándar para el movimiento generado por un pago de compromiso."""
-    ahora = datetime.now()
+    ahora = fecha or datetime.now()
     if res["modalidad"] == "Cuotas":
         return f"{res['nombre']} (Cuota {res['cuotas_pagadas']}/{res['cuotas_totales']})"
     return f"{res['nombre']} ({mes_espanol(ahora.month)})"
 
-def registrar_movimiento_pago(res: dict, cuenta: str, monto: int, concepto: str) -> str:
+def registrar_movimiento_pago(res: dict, cuenta: str, monto: int, concepto: str, fecha: datetime | None = None) -> str:
     """Inserta en la hoja de Movimientos el registro asociado a un pago de compromiso."""
-    ahora = datetime.now()
+    ahora = fecha or datetime.now()
     es_ingreso = res.get("flujo", "Egreso").lower() == "ingreso"
     fila = [
         ahora.strftime("%d/%m/%Y"),
@@ -131,7 +144,7 @@ def crear_compromiso_prestamo(op: dict, cuenta_override: str = "") -> dict:
     )
 
     # Movimiento inicial del dinero en la cuenta
-    ahora = datetime.now()
+    ahora = _fecha_desde_ia(op)
     fila = [
         ahora.strftime("%d/%m/%Y"),
         mes_espanol(ahora.month),
@@ -169,7 +182,7 @@ def crear_compromiso_desde_ia(info: dict, cuenta: str = "") -> dict:
     if creado["categoria"] == "Préstamo" and creado["monto_cuota"] > 0:
         tipo_inicial = "Egreso" if creado["flujo"] == "Ingreso" else "Ingreso"
         monto_inicial = creado["monto_cuota"] * max(1, creado["cuotas_totales"])
-        ahora = datetime.now()
+        ahora = _fecha_desde_ia(info)
         fila = [
             ahora.strftime("%d/%m/%Y"),
             mes_espanol(ahora.month),
@@ -235,7 +248,8 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
         if not objetivo:
             raise ValueError(f"No se encontró el compromiso o deuda '{nombre_comp}'.")
 
-        periodo = datetime.now().strftime("%Y-%m")
+        ahora = _fecha_desde_ia(op)
+        periodo = ahora.strftime("%Y-%m")
 
         if es_liq and objetivo["modalidad"] == "Cuotas":
             res = sheets_client.liquidar_compromiso(objetivo["id"], periodo, monto_real=monto_custom if monto_custom > 0 else None)
@@ -244,9 +258,9 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
         else:
             res = sheets_client.registrar_pago_compromiso(objetivo["id"], periodo)
             monto_pago = monto_custom if monto_custom > 0 else res["monto_cuota"]
-            concepto = concepto_pago_compromiso(res)
+            concepto = concepto_pago_compromiso(res, ahora)
 
-        reg_id = registrar_movimiento_pago(res, cuenta_origen, monto_pago, concepto)
+        reg_id = registrar_movimiento_pago(res, cuenta_origen, monto_pago, concepto, fecha=ahora)
 
         return {
             "accion": "pago_compromiso",
@@ -269,7 +283,7 @@ def ejecutar_operacion_financiera(op: dict, cuenta_override: str = "", cuentas_d
             cuenta_match = next((c for c in cuentas_disponibles if c.lower() == cuenta.lower()), None)
             cuenta = cuenta_match if cuenta_match else (cuentas_disponibles[0] if cuentas_disponibles else "Efectivo")
 
-        ahora = datetime.now()
+        ahora = _fecha_desde_ia(op)
         fila = [ahora.strftime("%d/%m/%Y"), mes_espanol(ahora.month), ahora.year, tipo, categoria, concepto, monto]
         registro_id = sheets_client.append_record(fila, cuenta=cuenta)
 
