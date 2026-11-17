@@ -1,0 +1,27 @@
+/* Estilos base */
+body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+/* Tabs de navegación principal */
+.tab-btn-active {
+  color: #2563EB;
+  border-bottom: 2px solid #2563EB;
+  background-color: #EFF6FF;
+  font-weight: 700;
+}
+.tab-btn-inactive {
+  color: #64748B;
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+}
+.tab-btn-inactive:hover {
+  color: #0F172A;
+  background-color: #F1F5F9;
+}
+
+/* Scrollbars minimalistas */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 9999px; }
