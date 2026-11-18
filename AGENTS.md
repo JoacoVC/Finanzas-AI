@@ -18,6 +18,8 @@ venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --r
 
 There is no test/staging environment. Every endpoint call mutates the user's **real Google Sheet** (tabs `Registros`, `Cuentas`, `Compromisos`) and real account balances. Do not run exploratory POST/PUT/DELETE requests against the live sheet; simulate on the sheet copy (`Finanzas Bot (1).xlsx` in the root) or reason from code instead.
 
+⚠️ The `--reload` reloader can **silently stop detecting changes** (observed 2026-11-17: worker process stayed alive from 17:02 despite backend files edited at 18:31–18:58, likely OneDrive interfering with file-change notifications). After backend edits, verify the reload worker actually restarted (`Get-CimInstance Win32_Process -Filter "ParentProcessId=<uvicorn-pid>" | Select CreationDate`) or restart the server manually — stale code caused a real bug (loan registered as a plain transaction, compromiso never created). A second uvicorn instance fails to bind (port in use) — kill the old one first. The server may also be running as an agent background process instead of the user's `run.bat` console.
+
 ## Architecture facts that aren't obvious
 
 - **All routes live in `app/main.py`.** `app/api/routes.py` and `app/services/intent_parser.py` are **empty placeholder files** — don't put code there expecting it to run.

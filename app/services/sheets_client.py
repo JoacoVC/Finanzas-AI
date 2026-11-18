@@ -73,7 +73,8 @@ class SheetsClient:
     # --- HOJA DE CUENTAS Y TARJETAS DE CRÉDITO ---
 
     def _asegurar_conexion(self):
-        self._asegurar_conexion()
+        if self.spreadsheet is None or self.sheet is None:
+            self.connect()
 
     def _buscar_cuenta(self, nombre: str, tipo: Optional[str] = None, liquida: bool = False, parcial: bool = False) -> Optional[dict]:
         """
