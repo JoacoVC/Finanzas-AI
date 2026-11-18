@@ -32,6 +32,13 @@ function actualizarSelectoresCuentas() {
     .map(c => `<option value="${c.nombre}">${c.nombre}</option>`)
     .join('') || '<option value="Efectivo">Efectivo</option>';
 
+  // Para liquidar compromisos se incluyen las tarjetas (método de pago: consumen cupo)
+  const opcionesPagoConTarjetas = todasLasCuentas
+    .map(c => c.tipo === 'Tarjeta'
+      ? `<option value="${c.nombre}">💳 ${c.nombre} (Cupo: ${formatoMoneda.format(c.cupo_disponible)})</option>`
+      : `<option value="${c.nombre}">${c.nombre} (${formatoMoneda.format(c.saldo)})</option>`)
+    .join('') || '<option value="Efectivo">Efectivo</option>';
+
   // Formulario de registro manual
   document.getElementById('man-cuenta').innerHTML = todasOpciones;
   document.getElementById('man-cuenta-destino').innerHTML = todasOpciones;
@@ -40,7 +47,7 @@ function actualizarSelectoresCuentas() {
   // Modales
   document.getElementById('edit-mov-cuenta').innerHTML = todasOpciones;
   document.getElementById('edit-mov-destino').innerHTML = todasOpciones;
-  document.getElementById('modal-liq-cuenta').innerHTML = opcionesLiquidas;
+  document.getElementById('modal-liq-cuenta').innerHTML = opcionesPagoConTarjetas;
   document.getElementById('abono-tarjeta-cuenta').innerHTML = opcionesLiquidas;
 }
 

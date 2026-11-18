@@ -100,6 +100,14 @@ function renderizarCuadriculaPagosYDeudas() {
     .map(c => `<option value="${c.nombre}">${c.nombre} (${formatoMoneda.format(c.saldo)})</option>`)
     .join('') || '<option value="Efectivo">Efectivo</option>';
 
+  // Para pagar compromisos SÍ se incluyen las tarjetas: son un método de pago
+  // (un egreso con tarjeta consume cupo y aumenta la deuda usada).
+  const opcionesCuentasPagoHTML = todasLasCuentas
+    .map(c => c.tipo === 'Tarjeta'
+      ? `<option value="${c.nombre}">💳 ${c.nombre} (Cupo: ${formatoMoneda.format(c.cupo_disponible)})</option>`
+      : `<option value="${c.nombre}">${c.nombre} (${formatoMoneda.format(c.saldo)})</option>`)
+    .join('') || '<option value="Efectivo">Efectivo</option>';
+
   // Tarjetas de Crédito HTML
   let tarjetasHTML = tarjetasCredito.map(t => {
     const tieneDeuda = t.saldo > 0;
@@ -223,7 +231,7 @@ function renderizarCuadriculaPagosYDeudas() {
         <div class="mt-5 pt-3 border-t border-slate-100 space-y-2">
           <div class="flex items-center gap-1.5">
             <select id="cta-comp-${c.id}" class="text-xs border border-slate-300 rounded-xl px-2 py-2 bg-white max-w-[125px]">
-              ${opcionesCuentasLiquidasHTML}
+              ${esIngreso ? opcionesCuentasLiquidasHTML : opcionesCuentasPagoHTML}
             </select>
             <button
               onclick="pagarCuotaCompromiso('${c.id}', this)"
@@ -274,6 +282,15 @@ function renderizarCuadriculaPagosYDeudas() {
 // Pagar una cuota ordinaria de compromiso
 async function pagarCuotaCompromiso(id, btn) {
   const cuenta = document.getElementById(`cta-comp-${id}`)?.value || 'Efectivo';
+
+  // Si se paga con tarjeta, advertir cuando el pago supere el cupo disponible
+  const cta = todasLasCuentas.find(c => c.nombre === cuenta);
+  const comp = todosLosCompromisos.find(c => c.id === id);
+  if (cta && cta.tipo === 'Tarjeta' && comp && comp.monto_cuota > (cta.cupo_disponible || 0)) {
+    const seguir = confirm(`La tarjeta "${cta.nombre}" tiene ${formatoMoneda.format(cta.cupo_disponible || 0)} de cupo disponible y el pago es de ${formatoMoneda.format(comp.monto_cuota)}.\n\n¿Pagar de todos modos con la tarjeta?`);
+    if (!seguir) return;
+  }
+
   btn.disabled = true;
 
   try {
@@ -337,6 +354,13 @@ async function confirmarLiquidacionCredito(e) {
   if (!montoReal || montoReal <= 0) {
     mostrarAlerta('❌ Ingresa un monto real válido mayor a 0.', true);
     return;
+  }
+
+  // Si se liquida con tarjeta, advertir cuando el monto supere el cupo disponible
+  const cta = todasLasCuentas.find(c => c.nombre === cuenta);
+  if (cta && cta.tipo === 'Tarjeta' && montoReal > (cta.cupo_disponible || 0)) {
+    const seguir = confirm(`La tarjeta "${cta.nombre}" tiene ${formatoMoneda.format(cta.cupo_disponible || 0)} de cupo disponible y la liquidación es de ${formatoMoneda.format(montoReal)}.\n\n¿Liquidar de todos modos con la tarjeta?`);
+    if (!seguir) return;
   }
 
   btn.disabled = true;

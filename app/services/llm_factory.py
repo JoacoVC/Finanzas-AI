@@ -48,7 +48,7 @@ Debes identificar TODAS las intenciones y movimientos financieros y devolver una
 
 4. "pago_compromiso": Pago de una cuota o liquidación de un compromiso recurrente o deuda registrada.
    - "nombre_compromiso": Nombre del compromiso activo según el contexto (ej. "Préstamo Moto", "Netflix", "Plan Celular").
-   - "cuenta_origen": Cuenta con que se paga.
+   - "cuenta_origen": Cuenta o tarjeta de crédito con la que se paga. Si es una tarjeta, se consume su cupo disponible (su deuda aumenta). Si no se especifica, usa "Efectivo".
    - "es_liquidacion": boolean (true si liquida el total de cuotas pendientes).
    - "monto": Entero positivo de la cuota o 0 si toma el valor configurado.
    - "fecha": (opcional) Fecha en que se hizo el pago, según la Regla de FECHA.
